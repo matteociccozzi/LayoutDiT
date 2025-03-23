@@ -22,7 +22,8 @@ class TrainingConfig(BaseModel):
     num_epochs: int = 5
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
-
+    step_size: int = 10
+    gamma: float = 0.1
 
 class LayoutDitConfig(BaseModel):
     data_loader_config: DataLoaderConfig

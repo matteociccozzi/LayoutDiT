@@ -1,4 +1,5 @@
 from layoutdit.config_constructs import TrainingConfig
+from layoutdit.log import get_logger
 from layoutdit.train_utils import assign_targets_to_patches
 import torch.optim as optim
 from torch.amp import autocast, GradScaler
@@ -6,9 +7,8 @@ import torch
 import torch.nn as nn
 from layoutdit.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
-import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def train(
@@ -19,14 +19,14 @@ def train(
     """
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=train_config.train_config.learning_rate,
-        weight_decay=train_config.train_config.weight_decay,
+        lr=train_config.learning_rate,
+        weight_decay=train_config.weight_decay,
     )
 
     scheduler = optim.lr_scheduler.StepLR(
         optimizer,
-        step_size=train_config.train_config.step_size,
-        gamma=train_config.train_config.gamma,
+        step_size=train_config.step_size,
+        gamma=train_config.gamma,
     )
 
     scaler = GradScaler()  # for mixed precision

@@ -3,7 +3,7 @@ import torch
 
 from layoutdit.publay_dataset import PubLayNetDataset
 from layoutdit.publay_dataset import collate_fn
-
+from layoutdit.transforms import train_transforms
 _EXAMPLES_DIR = "examples"
 _ANNOTATIONS_JSON_PATH = "examples/samples.json"
 
@@ -11,7 +11,7 @@ _ANNOTATIONS_JSON_PATH = "examples/samples.json"
 def dataset():
     data_root = _EXAMPLES_DIR
     annotations_path = _ANNOTATIONS_JSON_PATH
-    return PubLayNetDataset(data_root, annotations_path)
+    return PubLayNetDataset(data_root, annotations_path, transforms=train_transforms)
 
 def test_dataset_initialization(dataset):
     assert len(dataset) > 0
@@ -34,6 +34,12 @@ def test_dataset_getitem(dataset):
     assert isinstance(target['boxes'], torch.Tensor)
     assert isinstance(target['labels'], torch.Tensor)
     assert isinstance(target['image_id'], torch.Tensor)
+
+
+def test_datasets_shapes(dataset):
+    for image, target in dataset:
+        print("----")
+
 
 def test_dataset_collate_fn():
     batch = [

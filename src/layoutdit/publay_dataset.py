@@ -57,11 +57,13 @@ class PubLayNetDataset(Dataset):
         target = {"boxes": boxes, "labels": labels, "image_id": torch.tensor([img_id])}
 
         if self.transforms:
-            image, target = self.transforms(image, target)
+            image, target = self.transforms(image), target
 
         image = (
             transforms.functional.pil_to_tensor(image).float() / 255.0
         )  # normalize to [0,1]
+
+        print(f"image.shape: {image.shape}, index: {idx}")
 
         return image, target
 
