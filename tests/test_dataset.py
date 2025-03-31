@@ -4,8 +4,8 @@ import torch
 from layoutdit.publay_dataset import PubLayNetDataset
 from layoutdit.publay_dataset import collate_fn
 from layoutdit.transforms import train_transforms
-_EXAMPLES_DIR = "examples"
-_ANNOTATIONS_JSON_PATH = "examples/samples.json"
+_EXAMPLES_DIR = "../examples"
+_ANNOTATIONS_JSON_PATH = "../examples/samples.json"
 
 @pytest.fixture
 def dataset():

@@ -9,7 +9,7 @@ class LayoutDetectionModel(nn.Module):
             num_classes (int): number of classes in the dataset (not including background)
         """
         super().__init__()
-        
+
         self.backbone = AutoModel.from_pretrained("microsoft/dit-base")
 
         hidden_dim = self.backbone.config.hidden_size

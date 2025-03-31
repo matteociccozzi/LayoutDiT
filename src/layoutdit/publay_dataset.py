@@ -3,13 +3,17 @@ import json
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from torchvision import transforms
 from typing import Tuple, Dict
+
+from layoutdit.transforms import ComposeTransforms
 
 
 class PubLayNetDataset(Dataset):
     def __init__(
-        self, images_root_dir: str, annotations_json_path: str, transforms=None
+        self,
+        images_root_dir: str,
+        annotations_json_path: str,
+        transforms: ComposeTransforms = None,
     ):
         with open(annotations_json_path, "r") as f:
             coco_data = json.load(f)
@@ -41,6 +45,9 @@ class PubLayNetDataset(Dataset):
         file_name = img_info["file_name"]
         img_path = os.path.join(self.images_root_dir, file_name)
         image = Image.open(img_path).convert("RGB")
+        # image = (
+        #     transforms.functional.pil_to_tensor(image).float() / 255.0
+        # )  # normalize to [0,1]
 
         anns = self.annotations.get(img_id, [])
         boxes = []
@@ -58,12 +65,6 @@ class PubLayNetDataset(Dataset):
 
         if self.transforms:
             image, target = self.transforms(image), target
-
-        image = (
-            transforms.functional.pil_to_tensor(image).float() / 255.0
-        )  # normalize to [0,1]
-
-        print(f"image.shape: {image.shape}, index: {idx}")
 
         return image, target
 

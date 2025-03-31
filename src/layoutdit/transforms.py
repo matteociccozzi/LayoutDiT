@@ -51,11 +51,13 @@ class ComposeTransforms:
         return image
 
 
-train_transforms = ComposeTransforms(
-    [RandomResizeTransform(min_size=600, max_size=1000), RandomFlipTransform()]
-)
+# train_transforms = ComposeTransforms(
+#     [RandomResizeTransform(min_size=600, max_size=1000), RandomFlipTransform()]
+# )
 
-train_transforms = ComposeTransforms([
-    tv_transforms.Resize((800, 800)),  # resize to a fixed resolution
-    tv_transforms.ToTensor(),
-])
+train_transforms = ComposeTransforms(
+    [
+        tv_transforms.Resize((800, 800)),  # resize to a fixed resolution
+        # no need to compose ToTensor since that happens in dataloader
+    ]
+)
