@@ -1,16 +1,9 @@
-from layoutdit.config_constructs import TrainingConfig
+from layoutdit.config_constructs import TrainingConfig, DataLoaderConfig
 from layoutdit.log import get_logger
 from pydantic import BaseModel
 
 
 logger = get_logger(__name__)
-
-
-class DataLoaderConfig(BaseModel):
-    batch_size: int = 1
-    shuffle: bool = True
-    num_workers: int = 1
-
 
 class LayoutDitConfig(BaseModel):
     train_config: TrainingConfig = TrainingConfig()
