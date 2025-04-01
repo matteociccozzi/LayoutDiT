@@ -2,7 +2,6 @@
 
 # PubLayNet dataset URL
 DATASET_URL="https://dax-cdn.cdn.appdomain.cloud/dax-publaynet/1.0.0/publaynet.tar.gz"
-
 BUCKET_NAME="layoutdit"
 GCP_PATH="gs://${BUCKET_NAME}/data/publaynet"
 
@@ -24,9 +23,9 @@ if ! command_exists gsutil; then
 fi
 
 
-TEMP_DIR="/tmp/publaynet"
-mkdir -p "${TEMP_DIR}"
-cd "${TEMP_DIR}" || exit 1
+DATA_DIR="./publaynet"
+mkdir -p "${DATA_DIR}"
+cd "${DATA_DIR}" || exit 1
 
 echo "Downloading dataset..."
 wget --show-progress "${DATASET_URL}" -O publaynet.tar.gz || {
@@ -35,25 +34,27 @@ wget --show-progress "${DATASET_URL}" -O publaynet.tar.gz || {
 }
 
 
-echo "Processing and uploading splits..."
+cd publaynet/
+
 tar -xzf publaynet.tar.gz || {
     echo "Error: Failed to extract tar file"
     exit 1
 }
 
-for split in train val test; do
-    if [ -d "$split" ]; then
-        echo "Uploading $split split..."
-        gsutil -m cp -r "$split" "${GCP_PATH}/" || {
-            echo "Error: Failed to upload $split split"
-            exit 1
-        }
-    else
-        echo "Warning: $split directory not found in archive"
-    fi
-done
+# after extracting the data will be in publaynet/ dir with this structure:
+#train/	Images in the training subset
+#val/	Images in the validation subset
+#test/	Images in the testing subset
+#train.json	Annotations for training images
+#val.json	Annotations for validation images
+#LICENSE.txt	Plaintext version of the CDLA-Permissive license
+#README.txt	Text file with the file names and description
 
-cd - > /dev/null
-rm -rf "${TEMP_DIR}"
+echo "Current working directory: $(pwd)"
+echo "Contents of the directory (ls -a):"
+ls -a
+
+# upload all contents to gcp bucket
+gsutil -m cp -r . gs://layoutdit/data/publaynet/
 
 echo "Data gen completed"
