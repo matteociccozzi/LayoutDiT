@@ -28,8 +28,15 @@ then ssh into it:
 ```gcloud compute ssh data-vm --zone=us-west1-a```
 
 Clone the repo, and run `data_gen.sh`. This will download the dataset from the CDN setup and then untar and upload to 
-GCP bucket so that we can use it for training. 
+GCP bucket so that we can use it for training.
 
 ### Deep Learning VM, GPU Quotas etc
 
-### Running training entrypoint on GCP
+### Running training entrypoint
+#### Locally
+Setup application auth login: `gcloud auth application-default login`, this is needed to allow the application to load 
+data from the gcloud bucket. 
+It is not feasible to run training on your local machine, this is more of a sanity check should you want to run training
+from your local machine to make sure the code runs through fine. 
+
+#### GCP VM

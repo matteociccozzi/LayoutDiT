@@ -1,9 +1,13 @@
 import os
 import json
+
+import fsspec
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
 from typing import Tuple, Dict
+
+from torchvision.transforms.functional import pil_to_tensor
 
 from layoutdit.transforms import ComposeTransforms
 
@@ -15,7 +19,10 @@ class PubLayNetDataset(Dataset):
         annotations_json_path: str,
         transforms: ComposeTransforms = None,
     ):
-        with open(annotations_json_path, "r") as f:
+        # allow seamless transition from local fs to gcfs
+        self.fs_open = fsspec.open
+
+        with self.fs_open(annotations_json_path, "r") as f:
             coco_data = json.load(f)
 
         self.images_root_dir = images_root_dir
@@ -44,9 +51,12 @@ class PubLayNetDataset(Dataset):
         img_info = self.image_info[img_id]
         file_name = img_info["file_name"]
         img_path = os.path.join(self.images_root_dir, file_name)
-        image = Image.open(img_path).convert("RGB")
+
+        with self.fs_open(img_path, 'rb') as f:
+            image = Image.open(f).convert("RGB")
+
         # image = (
-        #     transforms.functional.pil_to_tensor(image).float() / 255.0
+        #     pil_to_tensor(image).float() / 255.0
         # )  # normalize to [0,1]
 
         anns = self.annotations.get(img_id, [])

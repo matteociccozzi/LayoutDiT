@@ -3,14 +3,20 @@ import torch
 
 from layoutdit.publay_dataset import PubLayNetDataset
 from layoutdit.publay_dataset import collate_fn
-from layoutdit.transforms import train_transforms
-_EXAMPLES_DIR = "../examples"
-_ANNOTATIONS_JSON_PATH = "../examples/samples.json"
+import torchvision.transforms as tv_transforms
+from layoutdit.transforms import ComposeTransforms
+
 
 @pytest.fixture
 def dataset():
-    data_root = _EXAMPLES_DIR
-    annotations_path = _ANNOTATIONS_JSON_PATH
+    data_root = "gs://layoutdit/data/samples/"
+    annotations_path = "gs://layoutdit/data/samples.json"
+    train_transforms = ComposeTransforms(
+        [
+            tv_transforms.Resize((800, 800)),  # resize to a fixed resolution
+            tv_transforms.ToTensor(),
+        ]
+    )
     return PubLayNetDataset(data_root, annotations_path, transforms=train_transforms)
 
 def test_dataset_initialization(dataset):
@@ -34,11 +40,6 @@ def test_dataset_getitem(dataset):
     assert isinstance(target['boxes'], torch.Tensor)
     assert isinstance(target['labels'], torch.Tensor)
     assert isinstance(target['image_id'], torch.Tensor)
-
-
-def test_datasets_shapes(dataset):
-    for image, target in dataset:
-        print("----")
 
 
 def test_dataset_collate_fn():

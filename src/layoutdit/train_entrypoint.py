@@ -36,6 +36,7 @@ def train(
     for epoch in range(train_config.num_epochs):
         total_loss = torch.tensor(0.0, device=train_config.device)
         for images, targets in data_loader:
+            logger.debug(f"Starting on image batch. batch_size={len(images)}")
             images = [img.to(train_config.device) for img in images]
             batch_imgs = torch.stack(images).to(train_config.device)
 
@@ -67,6 +68,7 @@ def train(
                 optimizer.step()
 
             total_loss += loss.item()
+            logger.debug(f"Finished on image batch. batch_size={len(images)}")
 
         scheduler.step()
         avg_loss = total_loss / len(data_loader)

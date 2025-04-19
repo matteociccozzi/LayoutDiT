@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from layoutdit.config import get_layout_dit_config
 from layoutdit.model import LayoutDetectionModel
 from layoutdit.publay_dataset import PubLayNetDataset, collate_fn
@@ -33,20 +31,15 @@ def main():
 
     if args.local_mode:
         dataset = PubLayNetDataset(
-            images_root_dir="../examples",
-            annotations_json_path="../examples/samples.json",
+            images_root_dir="gs://layoutdit/data/samples/",
+            annotations_json_path="gs://layoutdit/data/samples.json",
             transforms=train_transforms,
         )
     else:
-        data_root = Path("/home/jupyter/data")
-        annotations_path = data_root / "samples.json"
         dataset = PubLayNetDataset(
-            images_root_dir=str(data_root),
-            annotations_json_path=str(annotations_path),
+            images_root_dir="gs://layoutdit/data/train/",
+            annotations_json_path="gs://layoutdit/data/train.json",
             transforms=train_transforms,
-        )
-        raise NotImplementedError(
-            "Non-local mode not implemented yet. Use --local_mode for local training."
         )
 
     data_loader = DataLoader(

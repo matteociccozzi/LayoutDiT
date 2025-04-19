@@ -11,7 +11,7 @@ class LayoutDitConfig(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        logger.info(
+        logger.debug(
             f"Initialized LayoutDitConfig with:\n{self.model_dump_json(indent=2)}"
         )
 

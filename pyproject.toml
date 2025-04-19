@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.10,<3.11"
 dependencies = [
+    "fsspec>=2025.3.0",
+    "gcsfs>=2025.3.0",
     "pillow>=11.1.0",
     "pydantic>=2.10.6",
     "torch==2.4.0",
