@@ -1,6 +1,10 @@
 import torch
 from pydantic import BaseModel, Field
 
+from layoutdit.log import get_logger
+
+logger = get_logger(__name__)
+
 
 def get_available_device() -> str:
     if torch.cuda.is_available():
@@ -30,5 +34,17 @@ class TrainingConfig(BaseModel):
 
 
 class LayoutDitConfig(BaseModel):
-    data_loader_config: DataLoaderConfig
-    train_config: TrainingConfig
+    # training config
+    train_config: TrainingConfig = TrainingConfig()
+
+    # data loader config
+    data_loader_config: DataLoaderConfig = DataLoaderConfig()
+
+    # optional boolean flag for local mode, if true will load samples instead of train or test split
+    local_mode: bool | None = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        logger.debug(
+            f"Initialized LayoutDitConfig with:\n{self.model_dump_json(indent=2)}"
+        )

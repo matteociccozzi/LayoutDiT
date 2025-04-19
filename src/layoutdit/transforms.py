@@ -1,5 +1,6 @@
 import random
 import torchvision.transforms.functional as F
+import torchvision.transforms as tv_transforms
 
 
 class RandomFlipTransform:
@@ -48,3 +49,11 @@ class ComposeTransforms:
         for t in self.transforms:
             image = t(image)
         return image
+
+
+layout_dit_transforms = ComposeTransforms(
+    [
+        tv_transforms.Resize((800, 800)),  # resize to a fixed resolution
+        tv_transforms.ToTensor(),
+    ]
+)

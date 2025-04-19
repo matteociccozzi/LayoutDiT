@@ -3,21 +3,14 @@ import torch
 
 from layoutdit.publay_dataset import PubLayNetDataset
 from layoutdit.publay_dataset import collate_fn
-import torchvision.transforms as tv_transforms
-from layoutdit.transforms import ComposeTransforms
+from layoutdit.transforms import layout_dit_transforms
 
 
 @pytest.fixture
 def dataset():
     data_root = "gs://layoutdit/data/samples/"
     annotations_path = "gs://layoutdit/data/samples.json"
-    train_transforms = ComposeTransforms(
-        [
-            tv_transforms.Resize((800, 800)),  # resize to a fixed resolution
-            tv_transforms.ToTensor(),
-        ]
-    )
-    return PubLayNetDataset(data_root, annotations_path, transforms=train_transforms)
+    return PubLayNetDataset(data_root, annotations_path, transforms=layout_dit_transforms)
 
 def test_dataset_initialization(dataset):
     assert len(dataset) > 0

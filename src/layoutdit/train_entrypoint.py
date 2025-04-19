@@ -1,5 +1,6 @@
-from layoutdit.config_constructs import TrainingConfig
+from layoutdit.config_constructs import LayoutDitConfig, DataLoaderConfig
 from layoutdit.log import get_logger
+from layoutdit.publay_dataset import PubLayNetDataset, collate_fn
 from layoutdit.train_utils import assign_targets_to_patches
 import torch.optim as optim
 from torch.amp import autocast, GradScaler
@@ -8,15 +9,45 @@ import torch.nn as nn
 from layoutdit.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
 
+from layoutdit.transforms import layout_dit_transforms
+
 logger = get_logger(__name__)
 
 
-def train(
-    train_config: TrainingConfig, model: LayoutDetectionModel, data_loader: DataLoader
-):
+def _build_train_dataloader(
+    dataloader_config: DataLoaderConfig, local_mode: bool
+) -> DataLoader:
+    if local_mode:
+        data_segment = "samples"
+    else:
+        data_segment = "train"
+
+    dataset = PubLayNetDataset(
+        images_root_dir=f"gs://layoutdit/data/{data_segment}/",
+        annotations_json_path=f"gs://layoutdit/data/{data_segment}.json",
+        transforms=layout_dit_transforms,
+    )
+
+    return DataLoader(
+        dataset,
+        batch_size=dataloader_config.batch_size,
+        shuffle=dataloader_config.shuffle,
+        num_workers=dataloader_config.num_workers,
+        collate_fn=collate_fn,
+    )
+
+
+def train(layout_dit_config: LayoutDitConfig, model: LayoutDetectionModel):
     """
     Training entrypoint for LayoutDit model
     """
+
+    dataloader = _build_train_dataloader(
+        layout_dit_config.data_loader_config, layout_dit_config.local_mode
+    )
+
+    train_config = layout_dit_config.train_config
+
     optimizer = optim.AdamW(
         model.parameters(),
         lr=train_config.learning_rate,
@@ -35,7 +66,7 @@ def train(
     model.train()
     for epoch in range(train_config.num_epochs):
         total_loss = torch.tensor(0.0, device=train_config.device)
-        for images, targets in data_loader:
+        for images, targets in dataloader:
             logger.debug(f"Starting on image batch. batch_size={len(images)}")
             images = [img.to(train_config.device) for img in images]
             batch_imgs = torch.stack(images).to(train_config.device)
@@ -71,7 +102,7 @@ def train(
             logger.debug(f"Finished on image batch. batch_size={len(images)}")
 
         scheduler.step()
-        avg_loss = total_loss / len(data_loader)
+        avg_loss = total_loss / len(dataloader)
 
         logger.info(
             f"Epoch {epoch + 1}/{train_config.num_epochs}, Loss: {avg_loss:.4f}"

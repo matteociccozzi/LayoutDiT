@@ -7,8 +7,6 @@ import torch
 from torch.utils.data import Dataset
 from typing import Tuple, Dict
 
-from torchvision.transforms.functional import pil_to_tensor
-
 from layoutdit.transforms import ComposeTransforms
 
 
@@ -52,7 +50,7 @@ class PubLayNetDataset(Dataset):
         file_name = img_info["file_name"]
         img_path = os.path.join(self.images_root_dir, file_name)
 
-        with self.fs_open(img_path, 'rb') as f:
+        with self.fs_open(img_path, "rb") as f:
             image = Image.open(f).convert("RGB")
 
         # image = (
