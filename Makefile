@@ -3,7 +3,7 @@ test:
 
 lint: 
 	@uvx ruff format src/
-	@uvx ruff check src/
+	@uvx ruff check --fix src/
 
 sync:
 	@uv sync --locked --all-groups --all-extras

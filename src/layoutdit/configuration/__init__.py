@@ -1,4 +1,4 @@
-from layoutdit.config_constructs import LayoutDitConfig
+from layoutdit.configuration.config_constructs import LayoutDitConfig
 
 _layout_dit_config = None
 

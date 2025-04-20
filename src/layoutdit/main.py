@@ -1,8 +1,10 @@
-from layoutdit.config import get_layout_dit_config
+from layoutdit.configuration import get_layout_dit_config
+from layoutdit.evaluation.evaluator import Evaluator
 from layoutdit.model import LayoutDetectionModel
-from layoutdit.train_entrypoint import train
 from layoutdit.log import get_logger
 import argparse
+
+from layoutdit.training.trainer import train
 
 logger = get_logger(__name__)
 
@@ -19,11 +21,20 @@ def main():
 
     logger.info("Starting LayoutDit training", extra={"supplied_args": args})
 
-    model = LayoutDetectionModel()
+    model = LayoutDetectionModel(
+        # previous_layout_dit_checkpoint="gs://layoutdit/model_checkpoints/2025-04-19 22:07:12.542712/epoch_1.pth",
+        # device=layout_dit_config.train_config.device
+    )
+
     model = model.to(device=layout_dit_config.train_config.device)
 
     logger.info("Initialized model")
     train(layout_dit_config, model)
+
+    evaluator = Evaluator(model=model, layout_dit_config=layout_dit_config)
+    evaluator.score()
+    evaluator.visualize_preds()
+    evaluator.visualize_gt()
 
 
 if __name__ == "__main__":
