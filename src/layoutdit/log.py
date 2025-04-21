@@ -1,5 +1,6 @@
 # Configure logging singleton
 import logging
+import os
 
 
 class LayoutDitFilter(logging.Filter):
@@ -26,4 +27,11 @@ def get_logger(name: str):
             handler.setFormatter(formatter)
             _logger.addHandler(handler)
             _logger.setLevel(logging.INFO)
+
+        level_str = os.getenv("LAYOUT_LOG_LEVEL", "").upper()
+        if level_str == "DEBUG":
+            _logger.setLevel(logging.DEBUG)
+        else:
+            _logger.setLevel(logging.INFO)
+
     return _logger

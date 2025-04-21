@@ -1,42 +1,98 @@
-from transformers import AutoModel
-import torch.nn as nn
+from typing import Optional, List, Dict
 
+import fsspec
+from torchvision.models.detection.anchor_utils import AnchorGenerator
+
+from layoutdit.log import get_logger
+
+logger = get_logger(__name__)
+from torch.nn import functional as F
+import torch
+import torch.nn as nn
+from transformers import AutoConfig, AutoModel
+from torchvision.models.detection import FasterRCNN
+from torchvision.models.detection.backbone_utils import BackboneWithFPN
+
+class DiTBackbone(nn.Module):
+    """
+    Wraps a DiT model into a torchvision-style backbone returning a feature map dict.
+    """
+    def __init__(self, pretrained: bool = True):
+        super().__init__()
+        hf_name = "microsoft/dit-base"
+        config = AutoConfig.from_pretrained(hf_name, output_hidden_states=False)
+        if pretrained:
+            self.dit = AutoModel.from_pretrained(hf_name, config=config)
+        else:
+            self.dit = AutoModel.from_config(config)
+        self.out_channels = config.hidden_size
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # runs the transformer
+        outputs = self.dit(x)
+        # grab last_hidden_state: [B, 1+P, C]
+        feats = outputs.last_hidden_state
+        B, NP, C = feats.shape
+        P = NP - 1
+        G = int(P ** 0.5)
+        # drop CLS, reshape to [B, C, G, G]
+        return feats[:, 1:, :].permute(0, 2, 1).view(B, C, G, G)
 
 class LayoutDetectionModel(nn.Module):
-    def __init__(self, num_classes=5):
+    def __init__(
+        self,
+        num_classes: int = 5,
+        previous_layout_dit_checkpoint: Optional[str] = None,
+        device: Optional[str] = None,
+    ):
         """
-        Args:
-            num_classes (int): number of classes in the dataset (not including background)
+        Implements a two-stage Mask R-CNN detector on top of DiT+FPN.
         """
         super().__init__()
+        # 1) Build DiT backbone
+        dit_body = DiTBackbone(pretrained=(previous_layout_dit_checkpoint is None))
+        backbone = nn.Sequential(dit_body)
+        # inform FPN how many channels it sees
+        backbone.out_channels = dit_body.out_channels
+        # optional load DiT weights manually if checkpoint provided
+        if previous_layout_dit_checkpoint:
+            assert device, "Please supply a device"
+            fs = fsspec.filesystem("gcs")
+            with fs.open(previous_layout_dit_checkpoint, "rb") as f:
+                state_dict = torch.load(f, map_location=device)
+            self.load_dit_state(backbone.dit, state_dict)
 
-        self.backbone = AutoModel.from_pretrained("microsoft/dit-base")
+        # 2) Wrap with FPN
+        self.backbone_with_fpn = BackboneWithFPN(
+            backbone,
+            return_layers={"0": "0"},
+            in_channels_list=[backbone.out_channels],
+            out_channels=backbone.out_channels
+        )
 
-        hidden_dim = self.backbone.config.hidden_size
-        # classification head outputs num_classes+1 (as we account for background)
-        self.classifier = nn.Linear(hidden_dim, num_classes + 1)
-        # regress head: outputs 4 coordinates for the corners of the bboxes
-        self.bbox_regressor = nn.Linear(hidden_dim, 4)
+        # 3) Build Mask R-CNN
+        # num_classes+1 for background
+        anchor_generator = AnchorGenerator(
+            sizes=((32,), (64,)),  # one size for each of the 2 FPN outputs
+            aspect_ratios=((0.5, 1.0, 2.0),) * 2  # same 3 ratios on both levels
+        )
+        self.model = FasterRCNN(
+            self.backbone_with_fpn,
+            num_classes=num_classes + 1,
+            rpn_anchor_generator=anchor_generator
+        )
 
-    def forward(self, images):
-        # images: a batch of images as tensors, shape [B, 3, H, W]
-        # Use the processor to get pixel_values (with resizing/normalization if needed)
-        # For simplicity, assume images are already normalized and of correct size
-        # If using AutoImageProcessor, do: pixel_values = processor(images=list_of_PIL_images, return_tensors='pt').pixel_values
-        # Ensure input device matches model device
-        outputs = self.backbone(images)  # forward pass through transformer
-        # The backbone (AutoModel) returns a BaseModelOutput with 'last_hidden_state'
-        if hasattr(outputs, "last_hidden_state"):
-            feats = outputs.last_hidden_state  # shape [B, num_tokens, hidden_dim]
-        else:
-            feats = outputs[0]  # in case it returns tuple
+    @staticmethod
+    def load_dit_state(dit_module: nn.Module, state_dict: Dict):
+        """Helper to load a raw DiT state dict into the transformer."""
+        dit_module.load_state_dict(state_dict, strict=False)
 
-        # Typically, DiT (like ViT) has a CLS token at index 0. We can ignore it for detection.
-        patch_feats = feats[
-            :, 1:, :
-        ]  # drop the [CLS] token, now shape [B, P, hidden_dim] where P = number of patches
-        # Class logits and bbox deltas for each patch
-        class_logits = self.classifier(patch_feats)  # [B, P, num_classes+1]
-        bbox_preds = self.bbox_regressor(patch_feats)  # [B, P, 4]
-
-        return class_logits, bbox_preds
+    def forward(
+        self,
+        images: List[torch.Tensor],
+        targets: Optional[List[Dict[str, torch.Tensor]]] = None
+    ) -> Dict[str, torch.Tensor]:
+        """
+        On training: returns a dict of losses. On eval: returns list of detections.
+        """
+        return self.model(images, targets)

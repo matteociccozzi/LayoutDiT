@@ -1,11 +1,13 @@
 import os
 import json
+
+import fsspec
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Callable
 
-from layoutdit.transforms import ComposeTransforms
+from layoutdit.data.transforms import ComposeTransforms
 
 
 class PubLayNetDataset(Dataset):
@@ -15,8 +17,14 @@ class PubLayNetDataset(Dataset):
         annotations_json_path: str,
         transforms: ComposeTransforms = None,
     ):
-        with open(annotations_json_path, "r") as f:
+        # allow seamless transition from local fs to gcfs
+        self.fs_open: Callable = fsspec.open
+
+        with self.fs_open(annotations_json_path, "r") as f:
             coco_data = json.load(f)
+
+        # saving this so that we can use it in the Evaluator
+        self.coco_data = coco_data
 
         self.images_root_dir = images_root_dir
         self.transforms = transforms
@@ -44,18 +52,17 @@ class PubLayNetDataset(Dataset):
         img_info = self.image_info[img_id]
         file_name = img_info["file_name"]
         img_path = os.path.join(self.images_root_dir, file_name)
-        image = Image.open(img_path).convert("RGB")
-        # image = (
-        #     transforms.functional.pil_to_tensor(image).float() / 255.0
-        # )  # normalize to [0,1]
+
+        with self.fs_open(img_path, "rb") as f:
+            image = Image.open(f).convert("RGB")
 
         anns = self.annotations.get(img_id, [])
         boxes = []
         labels = []
         for ann in anns:
-            # COCO format: [x, y, width, height]
+            # COCO format: [x, y, width, height], Mask R CNN expects  [x1, y1, x2, y2]
             x, y, w, h = ann["bbox"]
-            boxes.append([x, y, x + w, y + h])
+            boxes.append([x, y, x+w, y+h])
             cat_id = ann["category_id"]
             labels.append(self.cat_id_to_label.get(cat_id, 0))
 
@@ -64,7 +71,7 @@ class PubLayNetDataset(Dataset):
         target = {"boxes": boxes, "labels": labels, "image_id": torch.tensor([img_id])}
 
         if self.transforms:
-            image, target = self.transforms(image), target
+            image, target = self.transforms(image, target)
 
         return image, target
 
