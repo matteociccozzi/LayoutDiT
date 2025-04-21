@@ -1,5 +1,6 @@
 from layoutdit.configuration.config_constructs import LayoutDitConfig, DataLoaderConfig
 from layoutdit.log import get_logger
+from layoutdit.loss import compute_loss
 from layoutdit.data.publay_dataset import PubLayNetDataset, collate_fn
 import torch.optim as optim
 from torch.amp import autocast, GradScaler
@@ -69,13 +70,29 @@ class Trainer:
                 # forward + loss
                 if train_cfg.device == "cuda":
                     with autocast(device_type="cuda", dtype=torch.float16):
-                        loss_dict = self.model(batch_imgs, targets)
+                        class_logits, bbox_preds = self.model(batch_imgs)
+                        loss = compute_loss(
+                            class_logits,
+                            bbox_preds,
+                            targets,
+                            batch_imgs,
+                            train_cfg.device,
+                            regression_loss_fn=train_cfg.regression_loss_fn,
+                            classification_loss_fn=train_cfg.class_loss_fn,
+                        )
                 else:
-                    loss_dict = self.model(batch_imgs, targets)
+                    class_logits, bbox_preds = self.model(batch_imgs)
+                    loss = compute_loss(
+                        class_logits,
+                        bbox_preds,
+                        targets,
+                        batch_imgs,
+                        train_cfg.device,
+                        regression_loss_fn=train_cfg.regression_loss_fn,
+                        classification_loss_fn=train_cfg.class_loss_fn,
+                    )
 
                 # backward
-                loss = torch.stack(list(loss_dict.values())).sum()
-
                 if self.scaler.is_enabled():
                     self.scaler.scale(loss).backward()
                     self.scaler.step(self.optimizer)

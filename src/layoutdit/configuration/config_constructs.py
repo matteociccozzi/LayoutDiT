@@ -29,12 +29,12 @@ class DataLoaderConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     device: str = Field(default_factory=get_available_device)
-    num_epochs: int = 10
+    num_epochs: int = 15
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     step_size: int = 10
     gamma: float = 0.1
-    checkpoint_interval: int = 100
+    checkpoint_interval: int = 45
 
     # loss function and field serializer (needed for printing configured loss in logs)
     regression_loss_fn: Callable[[Tensor, Tensor], Tensor] = (

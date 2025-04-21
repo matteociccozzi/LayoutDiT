@@ -224,71 +224,51 @@ class Evaluator:
 
     def score(self):
         all_predictions = []
-
-        # 1) Run inference over the entire dataset
         with torch.no_grad():
             for images, targets in self.dataloader:
-                # images: tuple of PIL Images after transforms
-                # targets: list of dicts with keys 'boxes','labels','image_id','orig_size'
+                imgs_t = torch.stack(images).to(self.device)
 
-                # Move images to device and call the model
-                imgs_t = [img.to(self.device) for img in images]
-                batch_outputs = self.model(imgs_t)
-                # batch_outputs is a list of dicts, one per image, with keys:
-                #   'boxes'   Tensor[K,4] in [x1,y1,x2,y2] (on the 224×224 or original scale)
-                #   'labels'  Tensor[K]
-                #   'scores'  Tensor[K]
+                # run the model’s built‑in post‑processing
+                batch_preds = self.model.predict(
+                    images=imgs_t, score_thresh=self.score_thresh, targets=targets
+                )
 
-                # 2) Convert each image’s detections into COCO‐style JSON entries
-                for tgt, out in zip(targets, batch_outputs):
-                    # Determine the image_id (could be a tensor)
-                    img_id = tgt["image_id"].item() if isinstance(tgt["image_id"], torch.Tensor) else tgt["image_id"]
+                if batch_preds:
+                    self._debug_target_data_info(targets)
+                    self._debug_batch_preds_info(batch_preds)
 
-                    boxes = out["boxes"].cpu()
-                    labels = out["labels"].cpu()
-                    scores = out["scores"].cpu()
+                all_predictions.extend(batch_preds)
 
-                    # If you trained/predicted on 224×224, but want to evaluate on original size,
-                    # you may need to rescale here using tgt["orig_size"].
-                    # Assuming your model returns boxes in the original scale (because you used a proper ROI head),
-                    # you can skip rescaling. Otherwise:
-                    orig_h, orig_w = tgt["orig_size"]
-                    scale_w = orig_w / 224
-                    scale_h = orig_h / 224
-                    boxes *= torch.tensor([scale_w, scale_h, scale_w, scale_h])
+        if all_predictions:
+            self.save_preds_json(all_predictions)
 
-                    for box, label, score in zip(boxes, labels, scores):
-                        x1, y1, x2, y2 = box.tolist()
-                        all_predictions.append({
-                            "image_id": img_id,
-                            "category_id": int(label),
-                            "bbox": [x1, y1, x2 - x1, y2 - y1],
-                            "score": float(score),
-                        })
+            # load detections into COCOeval
+            coco_dt = self.coco_gt.loadRes(all_predictions)
+            coco_eval = COCOeval(self.coco_gt, coco_dt, iouType="bbox")
+            coco_eval.evaluate()
+            coco_eval.accumulate()
+            coco_eval.summarize()
 
-        # 3) If we got any predictions, write them out and run COCOeval
-        if not all_predictions:
-            logger.warning("No predictions were generated.")
+            # coco_eval.stats is an array of 12 numbers:
+            # [AP, AP50, AP75, AP_small, AP_medium, AP_large,
+            #  AR1, AR10, AR100, AR_small, AR_medium, AR_large]
+            keys = [
+                "mAP",
+                "AP50",
+                "AP75",
+                "AP_s",
+                "AP_m",
+                "AP_l",
+                "AR1",
+                "AR10",
+                "AR100",
+                "AR_s",
+                "AR_m",
+                "AR_l",
+            ]
+            return dict(zip(keys, coco_eval.stats.tolist()))
+        else:
             return None
-
-        # Save to JSON
-        self.save_preds_json(all_predictions)
-
-        # Load into pycocotools and evaluate
-        coco_dt = self.coco_gt.loadRes(all_predictions)
-        coco_eval = COCOeval(self.coco_gt, coco_dt, iouType="bbox")
-        coco_eval.evaluate()
-        coco_eval.accumulate()
-        coco_eval.summarize()
-
-        # Map the 12 COCO stats to your keys
-        coco_keys = [
-            "mAP", "AP50", "AP75",
-            "AP_s", "AP_m", "AP_l",
-            "AR1", "AR10", "AR100",
-            "AR_s", "AR_m", "AR_l"
-        ]
-        return dict(zip(coco_keys, coco_eval.stats.tolist()))
 
     def save_preds_json(self, all_predictions):
         if self.eval_config.predictions_path:
@@ -298,6 +278,37 @@ class Evaluator:
             logger.info(
                 f"Saved {len(all_predictions)} predictions to {self.eval_config.predictions_path}"
             )
+
+    def _debug_batch_preds_info(self, batch_preds):
+        logger.debug("Predicted [0] data:")
+        pred_0 = batch_preds[0]
+        logger.debug(f"Image Id {pred_0['image_id']}")
+        logger.debug(f"Category ID of first label {pred_0['category_id']}")
+        logger.debug(f"Box Coordinates associated with first label {pred_0['bbox']}")
+        logger.debug("Appending prediction")
+
+    def _debug_target_data_info(self, targets):
+        logger.debug("Target [0] data:")
+        targ_0 = targets[0]
+        logger.debug(f"Image Id {targ_0['image_id']}")
+        logger.debug(f"Category ID of first label {targ_0['labels'][0].item()}")
+        # logger.debug(f"Box Coordinates associated with first label {targ_0['boxes'][0]}")
+        orig_h, orig_w = targ_0["orig_size"]
+        # this box is in the 224×224 frame:
+        box_224 = targ_0["boxes"][0]  # tensor([x1, y1, x2, y2])
+        # compute scale factors back to original:
+        scale_w = orig_w / box_224.new_tensor([224.0])[0]
+        scale_h = orig_h / box_224.new_tensor([224.0])[0]
+        # or, more generally, if you know the processed size (Wp, Hp):
+        #   scale_w = orig_w  / Wp
+        #   scale_h = orig_h  / Hp
+
+        # rescale:
+        box_orig = box_224 * torch.tensor(
+            [scale_w, scale_h, scale_w, scale_h], device=box_224.device
+        )
+
+        logger.debug(f"Box Coordinates in original image space: {box_orig.tolist()}")
 
     @staticmethod
     def _build_eval_dataloader(

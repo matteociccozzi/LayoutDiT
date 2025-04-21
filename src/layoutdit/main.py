@@ -4,7 +4,7 @@ from layoutdit.model import LayoutDetectionModel
 from layoutdit.log import get_logger
 import argparse
 
-from layoutdit.training.trainer import train
+from layoutdit.training.trainer import Trainer
 
 logger = get_logger(__name__)
 
@@ -29,7 +29,8 @@ def main():
     model = model.to(device=layout_dit_config.train_config.device)
 
     logger.info("Initialized model")
-    train(layout_dit_config, model)
+    trainer = Trainer(layout_dit_config, model)
+    trainer.train()
 
     evaluator = Evaluator(model=model, layout_dit_config=layout_dit_config)
     evaluator.score()

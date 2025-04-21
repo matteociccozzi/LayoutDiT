@@ -60,9 +60,9 @@ class PubLayNetDataset(Dataset):
         boxes = []
         labels = []
         for ann in anns:
-            # COCO format: [x, y, width, height]
+            # COCO format: [x, y, width, height], Mask R CNN expects  [x1, y1, x2, y2]
             x, y, w, h = ann["bbox"]
-            boxes.append([x, y, w, h])
+            boxes.append([x, y, x+w, y+h])
             cat_id = ann["category_id"]
             labels.append(self.cat_id_to_label.get(cat_id, 0))
 
