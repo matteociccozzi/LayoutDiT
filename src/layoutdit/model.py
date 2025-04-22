@@ -1,42 +1,79 @@
-from typing import Optional, List, Dict
+from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
-import fsspec
-from torchvision.models.detection.anchor_utils import AnchorGenerator
+from layoutdit.log import get_logger
+from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
 from layoutdit.log import get_logger
 
 logger = get_logger(__name__)
-from torch.nn import functional as F
+
+import fsspec
+from collections import OrderedDict
+from typing import Optional, Dict
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import AutoConfig, AutoModel
+from torchvision.ops import FeaturePyramidNetwork
+from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.models.detection import FasterRCNN
-from torchvision.models.detection.backbone_utils import BackboneWithFPN
 
 class DiTBackbone(nn.Module):
     """
-    Wraps a DiT model into a torchvision-style backbone returning a feature map dict.
+    4-scale DiT feature extractor:
+      - taps hidden states at layers d/3, d/2, 2d/3, d
+      - upsamples/downsamples by [4×,2×,1×,½×]
     """
     def __init__(self, pretrained: bool = True):
         super().__init__()
         hf_name = "microsoft/dit-base"
-        config = AutoConfig.from_pretrained(hf_name, output_hidden_states=False)
-        if pretrained:
-            self.dit = AutoModel.from_pretrained(hf_name, config=config)
-        else:
-            self.dit = AutoModel.from_config(config)
-        self.out_channels = config.hidden_size
+        config = AutoConfig.from_pretrained(hf_name, output_hidden_states=True)
+        self.dit = (
+            AutoModel.from_pretrained(hf_name, config=config) if pretrained
+            else AutoModel.from_config(config)
+        )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # runs the transformer
-        outputs = self.dit(x)
-        # grab last_hidden_state: [B, 1+P, C]
-        feats = outputs.last_hidden_state
-        B, NP, C = feats.shape
+        d = config.num_hidden_layers
+        self.layer_idxs = [d // 3, d // 2, 2 * d // 3, d]
+        self.scales = [4.0, 2.0, 1.0, 0.5]
+        self.hidden_size = config.hidden_size
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        hs = self.dit(x).hidden_states  # tuple length d+1
+        B, NP, C = hs[0].shape
         P = NP - 1
-        G = int(P ** 0.5)
-        # drop CLS, reshape to [B, C, G, G]
-        return feats[:, 1:, :].permute(0, 2, 1).view(B, C, G, G)
+        G = int(P**0.5)
+        feats = OrderedDict()
+        for i, (idx, scale) in enumerate(zip(self.layer_idxs, self.scales), start=2):
+            t = hs[idx][:, 1:, :].permute(0, 2, 1).view(B, C, G, G)
+            if scale != 1.0:
+                t = F.interpolate(t, scale_factor=scale, mode="bilinear", align_corners=False)
+            feats[f"p{i}"] = t  # yields p2, p3, p4, p5
+        return feats
+
+class DiTWithFPN(nn.Module):
+    """
+    Wraps DiTBackbone + FPN (P2–P6) as one module suitable for FasterRCNN.
+    """
+    def __init__(self, pretrained: bool = True):
+        super().__init__()
+        self.backbone = DiTBackbone(pretrained=pretrained)
+        # FPN input channels are all equal to DiT hidden_size
+        in_channels = [self.backbone.hidden_size] * 4
+        self.fpn = FeaturePyramidNetwork(
+            in_channels_list=in_channels,
+            out_channels=256,
+            extra_blocks=LastLevelMaxPool()  # adds p6 via max-pool on p5
+        )
+        self.out_channels = 256
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        feats = self.backbone(x)      # dict of p2–p5
+        fpn_feats = self.fpn(feats)   # dict of p2–p6
+        return fpn_feats
+
+from torchvision.ops import MultiScaleRoIAlign
 
 class LayoutDetectionModel(nn.Module):
     def __init__(
@@ -45,54 +82,35 @@ class LayoutDetectionModel(nn.Module):
         previous_layout_dit_checkpoint: Optional[str] = None,
         device: Optional[str] = None,
     ):
-        """
-        Implements a two-stage Mask R-CNN detector on top of DiT+FPN.
-        """
         super().__init__()
-        # 1) Build DiT backbone
-        dit_body = DiTBackbone(pretrained=(previous_layout_dit_checkpoint is None))
-        backbone = nn.Sequential(dit_body)
-        # inform FPN how many channels it sees
-        backbone.out_channels = dit_body.out_channels
-        # optional load DiT weights manually if checkpoint provided
+        # 1) Build DiTWithFPN as before
+        backbone = DiTWithFPN(pretrained=(previous_layout_dit_checkpoint is None))
         if previous_layout_dit_checkpoint:
-            assert device, "Please supply a device"
+            assert device
             fs = fsspec.filesystem("gcs")
             with fs.open(previous_layout_dit_checkpoint, "rb") as f:
                 state_dict = torch.load(f, map_location=device)
-            self.load_dit_state(backbone.dit, state_dict)
+            backbone.backbone.dit.load_state_dict(state_dict, strict=False)
 
-        # 2) Wrap with FPN
-        self.backbone_with_fpn = BackboneWithFPN(
-            backbone,
-            return_layers={"0": "0"},
-            in_channels_list=[backbone.out_channels],
-            out_channels=backbone.out_channels
+        # 2) AnchorGenerator for P2–P6
+        anchor_sizes = [(32,), (64,), (128,), (256,), (512,)]
+        aspect_ratios = [(0.5, 1.0, 2.0)] * 5
+        anchor_gen = AnchorGenerator(sizes=anchor_sizes, aspect_ratios=aspect_ratios)
+
+        # 3) Create a box_roi_pool that knows about p2–p5
+        box_roi_pool = MultiScaleRoIAlign(
+            featmap_names=['p2', 'p3', 'p4', 'p5'],
+            output_size=7,
+            sampling_ratio=2
         )
 
-        # 3) Build Mask R-CNN
-        # num_classes+1 for background
-        anchor_generator = AnchorGenerator(
-            sizes=((32,), (64,)),  # one size for each of the 2 FPN outputs
-            aspect_ratios=((0.5, 1.0, 2.0),) * 2  # same 3 ratios on both levels
-        )
+        # 4) Plug everything into FasterRCNN
         self.model = FasterRCNN(
-            self.backbone_with_fpn,
-            num_classes=num_classes + 1,
-            rpn_anchor_generator=anchor_generator
+            backbone,
+            num_classes=num_classes + 1,   # +1 for background
+            rpn_anchor_generator=anchor_gen,
+            box_roi_pool=box_roi_pool
         )
 
-    @staticmethod
-    def load_dit_state(dit_module: nn.Module, state_dict: Dict):
-        """Helper to load a raw DiT state dict into the transformer."""
-        dit_module.load_state_dict(state_dict, strict=False)
-
-    def forward(
-        self,
-        images: List[torch.Tensor],
-        targets: Optional[List[Dict[str, torch.Tensor]]] = None
-    ) -> Dict[str, torch.Tensor]:
-        """
-        On training: returns a dict of losses. On eval: returns list of detections.
-        """
+    def forward(self, images, targets=None):
         return self.model(images, targets)

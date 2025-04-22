@@ -29,7 +29,7 @@ class DataLoaderConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     device: str = Field(default_factory=get_available_device)
-    num_epochs: int = 15
+    num_epochs: int = 1
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     step_size: int = 10
@@ -58,7 +58,7 @@ class EvalConfig(BaseModel):
     score_thresh: float = 0.0
 
     # if set evaluator will save predictions in a json file in same format as publaynet
-    predictions_path: Optional[str] = "predictions.json"
+    predictions_path: Optional[str] = "gs://layoutdit/test/predictions.json"
 
     # visualization settings
     max_per_image: int = 10  # how many boxes to draw per image max
