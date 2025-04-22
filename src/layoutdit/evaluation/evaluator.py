@@ -228,7 +228,7 @@ class Evaluator:
     def score(self):
         all_predictions = []
 
-        # 1) Run inference over the entire dataset
+        self.model.eval()
         with torch.no_grad():
             for images, targets in self.dataloader:
                 # images: tuple of PIL Images after transforms
