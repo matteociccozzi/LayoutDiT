@@ -1,5 +1,6 @@
 from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
+from layoutdit.data.transforms import gen_rcnn_transform
 from layoutdit.log import get_logger
 from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
@@ -39,17 +40,25 @@ class DiTBackbone(nn.Module):
         self.scales = [4.0, 2.0, 1.0, 0.5]
         self.hidden_size = config.hidden_size
 
-    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
-        hs = self.dit(x).hidden_states  # tuple length d+1
-        B, NP, C = hs[0].shape
-        P = NP - 1
-        G = int(P**0.5)
+    def forward(self, x):
+        # x: [B, 3, H, W]
+        B, _, H, W = x.shape
+        patch_size = 16  # DiT‑base uses 16×16 patches
+        Gh, Gw = H // patch_size, W // patch_size
+
+        hs = self.dit(x).hidden_states
         feats = OrderedDict()
+        _, _, C = hs[0].shape
         for i, (idx, scale) in enumerate(zip(self.layer_idxs, self.scales), start=2):
-            t = hs[idx][:, 1:, :].permute(0, 2, 1).view(B, C, G, G)
+            # [B, 1+P, C] → drop CLS → [B, P, C]
+            t = hs[idx][:, 1:, :]
+            # → [B, C, Gh, Gw]
+            t = t.permute(0, 2, 1).view(B, C, Gh, Gw)
+
             if scale != 1.0:
                 t = F.interpolate(t, scale_factor=scale, mode="bilinear", align_corners=False)
-            feats[f"p{i}"] = t  # yields p2, p3, p4, p5
+
+            feats[f"p{i}"] = t
         return feats
 
 class DiTWithFPN(nn.Module):
@@ -87,6 +96,8 @@ class LayoutDetectionModel(nn.Module):
 
         # 1) Build DiTWithFPN as before
         backbone = DiTWithFPN(pretrained=(previous_layout_dit_checkpoint is None))
+        for param in backbone.backbone.parameters():
+            param.requires_grad = False
         if previous_layout_dit_checkpoint:
             assert device
             fs = fsspec.filesystem("gcs")
@@ -107,11 +118,15 @@ class LayoutDetectionModel(nn.Module):
         )
 
         # 4) Plug everything into FasterRCNN
+        # FasterRCNN expects a List[Tensor[C,H,W]]
         self.model = FasterRCNN(
             backbone,
             num_classes=num_classes + 1,   # +1 for background
             rpn_anchor_generator=anchor_gen,
-            box_roi_pool=box_roi_pool
+            box_roi_pool=box_roi_pool,
+            transform=gen_rcnn_transform,
+            max_size=224,
+            min_size=224,
         )
 
     def forward(self, images, targets=None):

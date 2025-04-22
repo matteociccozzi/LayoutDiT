@@ -1,11 +1,15 @@
 import os
 import json
 
+import PIL
 import fsspec
 from PIL import Image
 import torch
+from torch import Tensor
 from torch.utils.data import Dataset
 from typing import Tuple, Dict, Callable
+
+from torchvision.transforms import ToTensor
 
 from layoutdit.data.transforms import ComposeTransforms
 
@@ -44,7 +48,7 @@ class PubLayNetDataset(Dataset):
     def __len__(self):
         return len(self.ids)
 
-    def __getitem__(self, idx) -> Tuple[torch.Tensor, Dict]:
+    def __getitem__(self, idx) -> Tuple[PIL.Image.Image, Dict]:
         """
         Fetch the image and target for the given index, apply transforms if configured.
         """
@@ -55,6 +59,7 @@ class PubLayNetDataset(Dataset):
 
         with self.fs_open(img_path, "rb") as f:
             image = Image.open(f).convert("RGB")
+            image = ToTensor()(image)
 
         anns = self.annotations.get(img_id, [])
         boxes = []
@@ -69,9 +74,6 @@ class PubLayNetDataset(Dataset):
         boxes = torch.tensor(boxes, dtype=torch.float32)
         labels = torch.tensor(labels, dtype=torch.int64)
         target = {"boxes": boxes, "labels": labels, "image_id": torch.tensor([img_id])}
-
-        if self.transforms:
-            image, target = self.transforms(image, target)
 
         return image, target
 

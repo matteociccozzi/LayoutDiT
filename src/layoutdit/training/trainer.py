@@ -7,8 +7,6 @@ import torch
 from layoutdit.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
 
-from layoutdit.data.transforms import layout_dit_transforms
-
 logger = get_logger(__name__)
 
 class Trainer:
@@ -26,7 +24,6 @@ class Trainer:
         dataset = PubLayNetDataset(
             images_root_dir=f"gs://layoutdit/data/{segment}/",
             annotations_json_path=f"gs://layoutdit/data/{segment}.json",
-            transforms=layout_dit_transforms,
         )
         self.dataloader = DataLoader(
             dataset,
@@ -62,14 +59,12 @@ class Trainer:
         for epoch in range(train_cfg.num_epochs):
             total_loss = torch.tensor(0.0, device=train_cfg.device)
             for images, targets in self.dataloader:
-                images = [img.to(train_cfg.device) for img in images]
+                batch_imgs = images #[img.to(train_cfg.device) for img in images]
                 targets = [
                     {k: v.to(train_cfg.device) if torch.is_tensor(v) else v
                      for k, v in t.items()}
                     for t in targets
                 ]
-
-                batch_imgs = torch.stack(images)
 
                 self.optimizer.zero_grad()
                 # forward + loss

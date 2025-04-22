@@ -251,14 +251,6 @@ class Evaluator:
                     labels = out["labels"].cpu()
                     scores = out["scores"].cpu()
 
-                    # If you trained/predicted on 224×224, but want to evaluate on original size,
-                    # you may need to rescale here using tgt["orig_size"].
-                    # Assuming your model returns boxes in the original scale (because you used a proper ROI head),
-                    # you can skip rescaling. Otherwise:
-                    orig_h, orig_w = tgt["orig_size"]
-                    scale_w = orig_w / 224
-                    scale_h = orig_h / 224
-                    boxes *= torch.tensor([scale_w, scale_h, scale_w, scale_h])
 
                     for box, label, score in zip(boxes, labels, scores):
                         x1, y1, x2, y2 = box.tolist()
@@ -307,14 +299,13 @@ class Evaluator:
         dataloader_config: DataLoaderConfig, local_mode: bool
     ) -> DataLoader:
         if local_mode:
-            data_segment = "samples"
+            data_segment = "single"
         else:
             data_segment = "val"
 
         dataset = PubLayNetDataset(
             images_root_dir=f"gs://layoutdit/data/{data_segment}/",
-            annotations_json_path=f"gs://layoutdit/data/{data_segment}.json",
-            transforms=layout_dit_transforms,
+            annotations_json_path=f"gs://layoutdit/data/{data_segment}.json"
         )
 
         return DataLoader(
