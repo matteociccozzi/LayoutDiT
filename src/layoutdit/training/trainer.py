@@ -63,6 +63,12 @@ class Trainer:
             total_loss = torch.tensor(0.0, device=train_cfg.device)
             for images, targets in self.dataloader:
                 images = [img.to(train_cfg.device) for img in images]
+                targets = [
+                    {k: v.to(train_cfg.device) if torch.is_tensor(v) else v
+                     for k, v in t.items()}
+                    for t in targets
+                ]
+
                 batch_imgs = torch.stack(images)
 
                 self.optimizer.zero_grad()
@@ -94,5 +100,5 @@ class Trainer:
 
             # checkpoint
             if (epoch + 1) % train_cfg.checkpoint_interval == 0:
-                ckpt_path = self.model.save_checkpoint_to_gcs(epoch+1)
+                ckpt_path = self.model.save_checkpoint_to_gcs(self.config.run_name, epoch+1)
                 logger.info(f"Saved checkpoint to {ckpt_path}")

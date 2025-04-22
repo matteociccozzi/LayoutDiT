@@ -75,6 +75,8 @@ class LayoutDitConfig(BaseModel):
 
     eval_config: EvalConfig = EvalConfig()
 
+    run_name: str = "test-run"
+
     # optional boolean flag for local mode, if true will load samples instead of train or test split
     local_mode: bool | None = None
 

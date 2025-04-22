@@ -9,7 +9,7 @@ logger = get_logger(__name__)
 
 import fsspec
 from collections import OrderedDict
-from typing import Optional, Dict
+from typing import Optional, Dict, Callable
 
 import torch
 import torch.nn as nn
@@ -83,6 +83,8 @@ class LayoutDetectionModel(nn.Module):
         device: Optional[str] = None,
     ):
         super().__init__()
+        self.fs_open: Callable = fsspec.open
+
         # 1) Build DiTWithFPN as before
         backbone = DiTWithFPN(pretrained=(previous_layout_dit_checkpoint is None))
         if previous_layout_dit_checkpoint:
@@ -114,3 +116,36 @@ class LayoutDetectionModel(nn.Module):
 
     def forward(self, images, targets=None):
         return self.model(images, targets)
+
+    def save_checkpoint_to_gcs(self, run_name: str, epoch_num: int):
+        """
+                Save two copies of this model’s weights to GCS under:
+                  gs://<BUCKET>/model_checkpoints/<run_name>/epoch_<epoch_num>_{gpu,cpu}.pth
+
+                Returns:
+                    {
+                      "gpu": "gs://.../epoch_<epoch_num>_gpu.pth",
+                      "cpu": "gs://.../epoch_<epoch_num>_cpu.pth"
+                    }
+                """
+        assert hasattr(self, "checkpoint_bucket"), "Please set self.checkpoint_bucket"
+        fs = fsspec.filesystem("gcs")
+        base_path = f"gs://layoutdit/{run_name}/model_checkpoints"
+        paths = {}
+
+        # 1) GPU checkpoint (saves with original device tensors)
+        gpu_key = f"epoch_{epoch_num}_gpu.pth"
+        gpu_path = f"{base_path}/{gpu_key}"
+        with fs.open(gpu_path, "wb") as f:
+            torch.save(self.state_dict(), f)
+        paths["gpu"] = gpu_path
+
+        # 2) CPU checkpoint (moves all tensors to CPU first)
+        cpu_key = f"epoch_{epoch_num}_cpu.pth"
+        cpu_path = f"{base_path}/{cpu_key}"
+        cpu_state = {k: v.cpu() for k, v in self.state_dict().items()}
+        with fs.open(cpu_path, "wb") as f:
+            torch.save(cpu_state, f)
+        paths["cpu"] = cpu_path
+
+        return paths
