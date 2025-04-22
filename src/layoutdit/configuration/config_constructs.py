@@ -29,7 +29,7 @@ class DataLoaderConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     device: str = Field(default_factory=get_available_device)
-    num_epochs: int = 1
+    num_epochs: int = 5
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     step_size: int = 10
