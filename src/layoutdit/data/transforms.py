@@ -67,5 +67,5 @@ gen_rcnn_transform = GeneralizedRCNNTransform(
     min_size=224,
     max_size=224,
     image_mean=mean,
-    image_std=std,
+    image_std=std
 )

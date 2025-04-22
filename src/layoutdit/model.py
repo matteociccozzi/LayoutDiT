@@ -1,9 +1,7 @@
+from torchvision.ops import MultiScaleRoIAlign
 from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
 from layoutdit.data.transforms import gen_rcnn_transform
-from layoutdit.log import get_logger
-from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
-
 from layoutdit.log import get_logger
 
 logger = get_logger(__name__)
@@ -43,7 +41,24 @@ class DiTBackbone(nn.Module):
     def forward(self, x):
         # x: [B, 3, H, W]
         B, _, H, W = x.shape
-        patch_size = 16  # DiT‑base uses 16×16 patches
+
+        patch_size = 16
+        min_size = 224
+
+        if H < min_size:
+            pad_h = min_size - H
+        else:
+            pad_h = (patch_size - (H % patch_size)) % patch_size
+
+        if W < min_size:
+            pad_w = min_size - W
+        else:
+            pad_w = (patch_size - (W % patch_size)) % patch_size
+
+        # F.pad takes (left, right, top, bottom)
+        x = F.pad(x, (0, pad_w, 0, pad_h), value=0.0)
+        B, _, H, W = x.shape
+
         Gh, Gw = H // patch_size, W // patch_size
 
         hs = self.dit(x).hidden_states
@@ -81,8 +96,6 @@ class DiTWithFPN(nn.Module):
         feats = self.backbone(x)      # dict of p2–p5
         fpn_feats = self.fpn(feats)   # dict of p2–p6
         return fpn_feats
-
-from torchvision.ops import MultiScaleRoIAlign
 
 class LayoutDetectionModel(nn.Module):
     def __init__(

@@ -36,7 +36,7 @@ class TrainingConfig(BaseModel):
     # gamma: float = 0.1
     checkpoint_interval: int = 55
 
-    num_epochs: int = 50
+    num_epochs: int = 25
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
     step_size: int = 10
