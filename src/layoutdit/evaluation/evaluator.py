@@ -1,4 +1,5 @@
 import json
+from typing import Callable
 
 import torch
 from pycocotools.coco import COCO
@@ -22,6 +23,8 @@ logger = get_logger(__name__)
 class Evaluator:
     def __init__(self, model: LayoutDetectionModel, layout_dit_config: LayoutDitConfig):
         self.eval_config = layout_dit_config.eval_config
+
+        self.fs_open: Callable = fsspec.open
 
         self.model = model.to(self.eval_config.device).eval()
         self.dataloader = self._build_eval_dataloader(
@@ -70,7 +73,7 @@ class Evaluator:
         os.makedirs(out_dir, exist_ok=True)
 
         # 2) Load predictions.json
-        with open(preds_path, "r") as f:
+        with self.fs_open(preds_path, "r") as f:
             all_preds = json.load(f)
 
         # 3) Group predictions by image_id
@@ -292,7 +295,7 @@ class Evaluator:
 
     def save_preds_json(self, all_predictions):
         if self.eval_config.predictions_path:
-            with open(self.eval_config.predictions_path, "w") as f:
+            with self.fs_open(self.eval_config.predictions_path, "w") as f:
                 json.dump(all_predictions, f)
 
             logger.info(

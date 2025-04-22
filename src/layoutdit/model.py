@@ -6,7 +6,7 @@ from torchvision.models.detection.anchor_utils import AnchorGenerator
 from layoutdit.log import get_logger
 
 logger = get_logger(__name__)
-from torch.nn import functional as F
+
 import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModel
@@ -20,12 +20,25 @@ class DiTBackbone(nn.Module):
     def __init__(self, pretrained: bool = True):
         super().__init__()
         hf_name = "microsoft/dit-base"
-        config = AutoConfig.from_pretrained(hf_name, output_hidden_states=False)
+        config = AutoConfig.from_pretrained(hf_name, output_hidden_states=True)
         if pretrained:
             self.dit = AutoModel.from_pretrained(hf_name, config=config)
         else:
             self.dit = AutoModel.from_config(config)
-        self.out_channels = config.hidden_size
+
+        d = config.num_hidden_layers
+        # compute fractional layer indices
+        self.layer_idxs = [
+            d // 3,  # 1d/3
+            d // 2,  # 1d/2
+            (2 * d) // 3,  # 2d/3
+            d  # 3d/3
+        ]
+        # up/down‐sample scales corresponding to the paper
+        self.scales = [4.0, 2.0, 1.0, 0.5]
+
+        self.hidden_size = config.hidden_size
+        self.out_channels = self.hidden_size
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # runs the transformer
@@ -73,8 +86,8 @@ class LayoutDetectionModel(nn.Module):
         # 3) Build Mask R-CNN
         # num_classes+1 for background
         anchor_generator = AnchorGenerator(
-            sizes=((32,), (64,)),  # one size for each of the 2 FPN outputs
-            aspect_ratios=((0.5, 1.0, 2.0),) * 2  # same 3 ratios on both levels
+            sizes=((32,), (64,), (128,), (256,), (512,)),
+            aspect_ratios=((0.5, 1.0, 2.0),) * 5
         )
         self.model = FasterRCNN(
             self.backbone_with_fpn,
