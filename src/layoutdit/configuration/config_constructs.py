@@ -1,8 +1,7 @@
-from typing import Optional, Callable
+from typing import Optional
 
 import torch
-from pydantic import BaseModel, Field, field_serializer
-from torch import nn, Tensor
+from pydantic import BaseModel, Field
 
 from layoutdit.log import get_logger
 
@@ -29,34 +28,12 @@ class DataLoaderConfig(BaseModel):
 
 class TrainingConfig(BaseModel):
     device: str = Field(default_factory=get_available_device)
-    # num_epochs: int = 150
-    # learning_rate: float = 1e-4
-    # weight_decay: float = 1e-4
-    # step_size: int = 10
-    # gamma: float = 0.1
-    checkpoint_interval: int = 55
-
-    num_epochs: int = 25
-    learning_rate: float = 1e-3
-    weight_decay: float = 0.0
+    num_epochs: int = 30
+    learning_rate: float = 1e-4
+    weight_decay: float = 0
     step_size: int = 10
     gamma: float = 0.1
-
-    # loss function and field serializer (needed for printing configured loss in logs)
-    regression_loss_fn: Callable[[Tensor, Tensor], Tensor] = (
-        nn.functional.smooth_l1_loss
-    )
-
-    @field_serializer("regression_loss_fn")
-    def serialize_regression_loss_fn(self, regression_loss_fn, _info):
-        return regression_loss_fn.__name__
-
-    # loss function and field serializer (needed for printing configured loss in logs)
-    class_loss_fn: Callable[[Tensor, Tensor], Tensor] = nn.functional.cross_entropy
-
-    @field_serializer("class_loss_fn")
-    def serialize_class_loss_fn(self, class_loss_fn, _info):
-        return class_loss_fn.__name__
+    checkpoint_interval: int = 1
 
 
 class EvalConfig(BaseModel):
@@ -64,7 +41,7 @@ class EvalConfig(BaseModel):
     score_thresh: float = 0.0
 
     # if set evaluator will save predictions in a json file in same format as publaynet
-    predictions_path: Optional[str] = "gs://layoutdit/test/predictions.json"
+    predictions_path: Optional[str] = "gs://layoutdit/test2/predictions.json"
 
     # visualization settings
     max_per_image: int = 10  # how many boxes to draw per image max
@@ -81,7 +58,7 @@ class LayoutDitConfig(BaseModel):
 
     eval_config: EvalConfig = EvalConfig()
 
-    run_name: str = "test-run"
+    run_name: str = "test2-run"
 
     # optional boolean flag for local mode, if true will load samples instead of train or test split
     local_mode: bool | None = None

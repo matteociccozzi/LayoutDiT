@@ -1,4 +1,3 @@
-# Configure logging singleton
 import logging
 import os
 

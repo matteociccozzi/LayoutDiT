@@ -1,26 +1,20 @@
 import os
 import json
 
-import PIL
 import fsspec
 from PIL import Image
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
-from typing import Tuple, Dict, Callable
+from typing import Callable
 
 from torchvision.transforms import ToTensor
 
-from layoutdit.data.transforms import ComposeTransforms
+PUBLAY_NET_DATASET_ITEM_TYPE = tuple[Tensor, dict[str, Tensor]]
 
 
 class PubLayNetDataset(Dataset):
-    def __init__(
-        self,
-        images_root_dir: str,
-        annotations_json_path: str,
-        transforms: ComposeTransforms = None,
-    ):
+    def __init__(self, images_root_dir: str, annotations_json_path: str):
         # allow seamless transition from local fs to gcfs
         self.fs_open: Callable = fsspec.open
 
@@ -31,7 +25,6 @@ class PubLayNetDataset(Dataset):
         self.coco_data = coco_data
 
         self.images_root_dir = images_root_dir
-        self.transforms = transforms
 
         self.image_info = {img["id"]: img for img in coco_data["images"]}
         self.annotations = {}
@@ -48,7 +41,7 @@ class PubLayNetDataset(Dataset):
     def __len__(self):
         return len(self.ids)
 
-    def __getitem__(self, idx) -> Tuple[PIL.Image.Image, Dict]:
+    def __getitem__(self, idx) -> PUBLAY_NET_DATASET_ITEM_TYPE:
         """
         Fetch the image and target for the given index, apply transforms if configured.
         """
@@ -67,7 +60,7 @@ class PubLayNetDataset(Dataset):
         for ann in anns:
             # COCO format: [x, y, width, height], Mask R CNN expects  [x1, y1, x2, y2]
             x, y, w, h = ann["bbox"]
-            boxes.append([x, y, x+w, y+h])
+            boxes.append([x, y, x + w, y + h])
             cat_id = ann["category_id"]
             labels.append(self.cat_id_to_label.get(cat_id, 0))
 

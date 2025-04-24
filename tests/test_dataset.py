@@ -6,14 +6,13 @@ import torch
 
 from layoutdit.data.publay_dataset import PubLayNetDataset
 from layoutdit.data.publay_dataset import collate_fn
-from layoutdit.data.transforms import layout_dit_transforms
 
 
 @pytest.fixture
 def dataset():
     data_root = "gs://layoutdit/data/samples/"
     annotations_path = "gs://layoutdit/data/samples.json"
-    return PubLayNetDataset(data_root, annotations_path, transforms=layout_dit_transforms)
+    return PubLayNetDataset(data_root, annotations_path)
 
 def test_dataset_initialization(dataset):
     assert len(dataset) > 0
@@ -21,6 +20,7 @@ def test_dataset_initialization(dataset):
     assert hasattr(dataset, 'annotations')
     assert hasattr(dataset, 'cat_id_to_label')
 
+@pytest.skip("TODO deleteme")
 def test_publaynet_dataset_getitem_transformed(dataset):
     """
     Given a PubLayNetDataset with an HFProcessorWithBoxes transform,

@@ -4,10 +4,11 @@ from layoutdit.data.publay_dataset import PubLayNetDataset, collate_fn
 import torch.optim as optim
 from torch.amp import autocast, GradScaler
 import torch
-from layoutdit.model import LayoutDetectionModel
+from layoutdit.modeling.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
 
 logger = get_logger(__name__)
+
 
 class Trainer:
     def __init__(self, config: LayoutDitConfig, model: LayoutDetectionModel):
@@ -20,7 +21,7 @@ class Trainer:
 
     def _build_dataloader(self):
         dl_cfg: DataLoaderConfig = self.config.data_loader_config
-        segment = "samples" if self.config.local_mode else "train"
+        segment = "single" if self.config.local_mode else "train"
         dataset = PubLayNetDataset(
             images_root_dir=f"gs://layoutdit/data/{segment}/",
             annotations_json_path=f"gs://layoutdit/data/{segment}.json",
@@ -59,10 +60,11 @@ class Trainer:
         for epoch in range(train_cfg.num_epochs):
             total_loss = torch.tensor(0.0, device=train_cfg.device)
             for images, targets in self.dataloader:
-                batch_imgs = images #[img.to(train_cfg.device) for img in images]
                 targets = [
-                    {k: v.to(train_cfg.device) if torch.is_tensor(v) else v
-                     for k, v in t.items()}
+                    {
+                        k: v.to(train_cfg.device) if torch.is_tensor(v) else v
+                        for k, v in t.items()
+                    }
                     for t in targets
                 ]
 
@@ -70,9 +72,9 @@ class Trainer:
                 # forward + loss
                 if train_cfg.device == "cuda":
                     with autocast(device_type="cuda", dtype=torch.float16):
-                        loss_dict = self.model(batch_imgs, targets)
+                        loss_dict = self.model(images, targets)
                 else:
-                    loss_dict = self.model(batch_imgs, targets)
+                    loss_dict = self.model(images, targets)
 
                 # backward
                 loss = torch.stack(list(loss_dict.values())).sum()
@@ -91,9 +93,13 @@ class Trainer:
             # scheduler step
             self.scheduler.step()
             avg_loss = total_loss / len(self.dataloader)
-            logger.info(f"Epoch {epoch+1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}")
+            logger.info(
+                f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
+            )
 
             # checkpoint
             if (epoch + 1) % train_cfg.checkpoint_interval == 0:
-                ckpt_path = self.model.save_checkpoint_to_gcs(self.config.run_name, epoch+1)
+                ckpt_path = self.model.save_checkpoint_to_gcs(
+                    self.config.run_name, epoch + 1
+                )
                 logger.info(f"Saved checkpoint to {ckpt_path}")

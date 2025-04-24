@@ -13,9 +13,8 @@ from PIL import Image, ImageDraw, ImageFont
 from layoutdit.configuration import LayoutDitConfig
 from layoutdit.configuration.config_constructs import DataLoaderConfig
 from layoutdit.data.publay_dataset import PubLayNetDataset, collate_fn
-from layoutdit.data.transforms import layout_dit_transforms
 from layoutdit.log import get_logger
-from layoutdit.model import LayoutDetectionModel
+from layoutdit.modeling.model import LayoutDetectionModel
 
 logger = get_logger(__name__)
 
@@ -63,7 +62,6 @@ class Evaluator:
         draws boxes on up to self.eval_config.num_images source images,
         and writes them into self.eval_config.visualize_dir.
         """
-        # 1) Grab config values
         preds_path = self.eval_config.predictions_path
         max_per_img = self.eval_config.max_per_image
         out_dir = self.eval_config.visualize_dirpath_prefix + "_preds"
@@ -72,22 +70,18 @@ class Evaluator:
 
         os.makedirs(out_dir, exist_ok=True)
 
-        # 2) Load predictions.json
         with self.fs_open(preds_path, "r") as f:
             all_preds = json.load(f)
 
-        # 3) Group predictions by image_id
         preds_by_image = {}
         for p in all_preds:
             preds_by_image.setdefault(p["image_id"], []).append(p)
 
-        # 4) Prepare font
         try:
             font = ImageFont.truetype("arial.ttf", size=16)
         except IOError:
             font = ImageFont.load_default()
 
-        # 5) Iterate through COCO images, stop after num_images
         count = 0
         for img_rec in self.coco_gt.dataset["images"]:
             img_id = img_rec["id"]
@@ -154,26 +148,22 @@ class Evaluator:
         Draws ground‑truth boxes on up to self.eval_config.num_images
         source images and writes them into self.eval_config.visualize_dir.
         """
-        # 1) Grab config values
         out_dir = self.eval_config.visualize_dirpath_prefix + "_gt"
         num_images = self.eval_config.num_images
         img_root = self.dataloader.dataset.images_root_dir
 
         os.makedirs(out_dir, exist_ok=True)
 
-        # 2) Group GT annotations by image_id
         gt_by_image = {}
         for ann in self.coco_gt.dataset["annotations"]:
             img_id = ann["image_id"]
             gt_by_image.setdefault(img_id, []).append(ann)
 
-        # 4) Prepare font
         try:
             font = ImageFont.truetype("arial.ttf", size=16)
         except IOError:
             font = ImageFont.load_default()
 
-        # 5) Iterate through COCO images, stop after num_images
         count = 0
         for img_rec in self.coco_gt.dataset["images"]:
             img_id = img_rec["id"]
@@ -242,46 +232,55 @@ class Evaluator:
                 #   'labels'  Tensor[K]
                 #   'scores'  Tensor[K]
 
-                # 2) Convert each image’s detections into COCO‐style JSON entries
+                # convert to COCO‐style JSON entries
                 for tgt, out in zip(targets, batch_outputs):
                     # Determine the image_id (could be a tensor)
-                    img_id = tgt["image_id"].item() if isinstance(tgt["image_id"], torch.Tensor) else tgt["image_id"]
+                    img_id = (
+                        tgt["image_id"].item()
+                        if isinstance(tgt["image_id"], torch.Tensor)
+                        else tgt["image_id"]
+                    )
 
                     boxes = out["boxes"].cpu()
                     labels = out["labels"].cpu()
                     scores = out["scores"].cpu()
 
-
                     for box, label, score in zip(boxes, labels, scores):
                         x1, y1, x2, y2 = box.tolist()
-                        all_predictions.append({
-                            "image_id": img_id,
-                            "category_id": int(label),
-                            "bbox": [x1, y1, x2 - x1, y2 - y1],
-                            "score": float(score),
-                        })
+                        all_predictions.append(
+                            {
+                                "image_id": img_id,
+                                "category_id": int(label),
+                                "bbox": [x1, y1, x2 - x1, y2 - y1],
+                                "score": float(score),
+                            }
+                        )
 
-        # 3) If we got any predictions, write them out and run COCOeval
         if not all_predictions:
             logger.warning("No predictions were generated.")
             return None
 
-        # Save to JSON
         self.save_preds_json(all_predictions)
 
-        # Load into pycocotools and evaluate
         coco_dt = self.coco_gt.loadRes(all_predictions)
         coco_eval = COCOeval(self.coco_gt, coco_dt, iouType="bbox")
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
 
-        # Map the 12 COCO stats to your keys
         coco_keys = [
-            "mAP", "AP50", "AP75",
-            "AP_s", "AP_m", "AP_l",
-            "AR1", "AR10", "AR100",
-            "AR_s", "AR_m", "AR_l"
+            "mAP",
+            "AP50",
+            "AP75",
+            "AP_s",
+            "AP_m",
+            "AP_l",
+            "AR1",
+            "AR10",
+            "AR100",
+            "AR_s",
+            "AR_m",
+            "AR_l",
         ]
         return dict(zip(coco_keys, coco_eval.stats.tolist()))
 
@@ -305,7 +304,7 @@ class Evaluator:
 
         dataset = PubLayNetDataset(
             images_root_dir=f"gs://layoutdit/data/{data_segment}/",
-            annotations_json_path=f"gs://layoutdit/data/{data_segment}.json"
+            annotations_json_path=f"gs://layoutdit/data/{data_segment}.json",
         )
 
         return DataLoader(
