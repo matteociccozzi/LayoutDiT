@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 from pydantic import BaseModel, Field
 
+from layoutdit.configuration.model_config import ModelConfig
 from layoutdit.log import get_logger
 
 logger = get_logger(__name__)
@@ -27,6 +28,8 @@ class DataLoaderConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
+    train_input: str = "single"
+
     device: str = Field(default_factory=get_available_device)
     num_epochs: int = 30
     learning_rate: float = 1e-4
@@ -37,6 +40,8 @@ class TrainingConfig(BaseModel):
 
 
 class EvalConfig(BaseModel):
+    eval_input: str = "single"  # "val"
+
     device: str = Field(default_factory=get_available_device)
     score_thresh: float = 0.0
 
@@ -57,6 +62,8 @@ class LayoutDitConfig(BaseModel):
     data_loader_config: DataLoaderConfig = DataLoaderConfig()
 
     eval_config: EvalConfig = EvalConfig()
+
+    detection_model_config: ModelConfig = ModelConfig()
 
     run_name: str = "test2-run"
 

@@ -27,7 +27,8 @@ class Evaluator:
 
         self.model = model.to(self.eval_config.device).eval()
         self.dataloader = self._build_eval_dataloader(
-            layout_dit_config.data_loader_config, layout_dit_config.local_mode
+            layout_dit_config.data_loader_config,
+            layout_dit_config.eval_config.eval_prefix,
         )
         self.device = self.eval_config.device
 
@@ -295,16 +296,11 @@ class Evaluator:
 
     @staticmethod
     def _build_eval_dataloader(
-        dataloader_config: DataLoaderConfig, local_mode: bool
+        dataloader_config: DataLoaderConfig, eval_input: str
     ) -> DataLoader:
-        if local_mode:
-            data_segment = "single"
-        else:
-            data_segment = "val"
-
         dataset = PubLayNetDataset(
-            images_root_dir=f"gs://layoutdit/data/{data_segment}/",
-            annotations_json_path=f"gs://layoutdit/data/{data_segment}.json",
+            images_root_dir=f"gs://layoutdit/data/{eval_input}/",
+            annotations_json_path=f"gs://layoutdit/data/{eval_input}.json",
         )
 
         return DataLoader(
