@@ -1,17 +1,18 @@
+from typing import Optional, Callable
+
+import fsspec
+import torch
+import torch.nn as nn
+from torchvision.models.detection import FasterRCNN
+from torchvision.models.detection.rpn import (
+    AnchorGenerator,
+)
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.ops.feature_pyramid_network import LastLevelMaxPool
 
+from layoutdit.configuration.model_config import ModelConfig
 from layoutdit.log import get_logger
 from layoutdit.modeling.backbone_type import BackboneType
-
-import fsspec
-from typing import Optional, Callable
-
-import torch
-import torch.nn as nn
-from torchvision.models.detection.anchor_utils import AnchorGenerator
-from torchvision.models.detection import FasterRCNN
-
 
 logger = get_logger(__name__)
 
@@ -19,14 +20,41 @@ logger = get_logger(__name__)
 class LayoutDetectionModel(nn.Module):
     def __init__(
         self,
-        num_classes: int = 5,
+        model_config: ModelConfig,
         previous_layout_dit_checkpoint: Optional[str] = None,
         device: Optional[str] = None,
-        backbone_type: BackboneType = BackboneType.DIT,
     ):
         super().__init__()
         self.fs_open: Callable = fsspec.open
 
+        backbone, feature_map_names = self._build_backbone(
+            model_config.backbone_type, device, previous_layout_dit_checkpoint
+        )
+
+        box_roi_pool = MultiScaleRoIAlign(
+            featmap_names=feature_map_names,
+            output_size=7,
+            sampling_ratio=2,
+        )
+
+        anchor_sizes = model_config.anchor_sizes
+        aspect_ratios = model_config.aspect_ratios
+        anchor_gen = AnchorGenerator(sizes=anchor_sizes, aspect_ratios=aspect_ratios)
+
+        # FasterRCNN expects a List[Tensor[C,H,W]]
+        self.model = FasterRCNN(
+            backbone,
+            num_classes=model_config.num_classes + 1,  # +1 for background
+            rpn_anchor_generator=anchor_gen,
+            box_roi_pool=box_roi_pool,
+            max_size=224,
+            min_size=224,
+            fixed_size=(224, 224),  # fetched from dit backbone processor
+            image_mean=(0.5, 0.5, 0.5),  # fetched from dit backbone processor
+            image_std=(0.5, 0.5, 0.5),  # fetched from dit backbone processor
+        )
+
+    def _build_backbone(self, backbone_type, device, previous_layout_dit_checkpoint):
         if backbone_type == BackboneType.DIT:
             from layoutdit.modeling.dit_backbone import DiTWithFPN
 
@@ -54,29 +82,7 @@ class LayoutDetectionModel(nn.Module):
             )
 
             feature_map_names = ["0", "1", "2", "3"]
-
-        anchor_sizes = [(32,), (64,), (128,), (256,), (512,)]
-        aspect_ratios = [(0.5, 1.0, 2.0)] * 5
-        anchor_gen = AnchorGenerator(sizes=anchor_sizes, aspect_ratios=aspect_ratios)
-
-        box_roi_pool = MultiScaleRoIAlign(
-            featmap_names=feature_map_names,
-            output_size=7,
-            sampling_ratio=2,
-        )
-
-        # FasterRCNN expects a List[Tensor[C,H,W]]
-        self.model = FasterRCNN(
-            backbone,
-            num_classes=num_classes + 1,  # +1 for background
-            rpn_anchor_generator=anchor_gen,
-            box_roi_pool=box_roi_pool,
-            max_size=224,
-            min_size=224,
-            fixed_size=(224, 224),
-            image_mean=(0.5, 0.5, 0.5),
-            image_std=(0.5, 0.5, 0.5),
-        )
+        return backbone, feature_map_names
 
     def forward(self, images, targets=None):
         return self.model(images, targets)
