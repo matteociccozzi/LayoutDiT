@@ -22,9 +22,9 @@ def main():
     logger.info("Starting LayoutDit training", extra={"supplied_args": args})
 
     model = LayoutDetectionModel(
-        # previous_layout_dit_checkpoint="gs://layoutdit/model_checkpoints/2025-04-19 22:07:12.542712/epoch_1.pth",
+        model_config=layout_dit_config.detection_model_config,
         device=layout_dit_config.train_config.device,
-        # backbone_type=BackboneType.RESNET50
+        # previous_layout_dit_checkpoint="gs://layoutdit/model_checkpoints/2025-04-19 22:07:12.542712/epoch_1.pth",
     )
 
     model = model.to(device=layout_dit_config.train_config.device)

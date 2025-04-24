@@ -21,7 +21,9 @@ class Trainer:
 
     def _build_dataloader(self):
         dl_cfg: DataLoaderConfig = self.config.data_loader_config
-        segment = "single" if self.config.local_mode else "train"
+
+        segment = self.config.train_config.train_input
+
         dataset = PubLayNetDataset(
             images_root_dir=f"gs://layoutdit/data/{segment}/",
             annotations_json_path=f"gs://layoutdit/data/{segment}.json",
