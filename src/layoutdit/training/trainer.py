@@ -122,7 +122,7 @@ class Trainer:
 
     def _save_loss(self):
         fig, ax = plt.subplots()
-        ax.plot(range(1, len(self.loss_history) + 1), self.loss_history, marker='o')
+        ax.plot(range(1, len(self.loss_history) + 1), self.loss_history, marker="o")
         ax.set_xlabel("Epoch")
         ax.set_ylabel("Average Loss")
         ax.set_title("Training Loss per Epoch")
