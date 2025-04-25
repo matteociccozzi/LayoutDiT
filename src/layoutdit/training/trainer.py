@@ -1,3 +1,4 @@
+import os
 from typing import Callable
 
 import fsspec
@@ -11,9 +12,7 @@ from torch.amp import autocast, GradScaler
 import torch
 from layoutdit.modeling.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
-from torch.profiler import profile, record_function, ProfilerActivity
-
-from layoutdit.training.prof_trace_handler import trace_handler
+from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
 
 logger = get_logger(__name__)
 
@@ -24,6 +23,7 @@ class Trainer:
 
         # history of epoch losses
         self.loss_history: list[float] = []
+        self.trace_log_dir = f"./log/traces"
 
         self.config = config
         self.model = model.to(config.train_config.device)
@@ -77,7 +77,7 @@ class Trainer:
             with profile(
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
                 schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
-                on_trace_ready=trace_handler,
+                on_trace_ready=tensorboard_trace_handler(self.trace_log_dir),
                 record_shapes=True,
                 profile_memory=True,
                 with_stack=True,
@@ -138,6 +138,7 @@ class Trainer:
                     logger.info(f"Saved checkpoint to {ckpt_path}")
 
         self._save_loss()  # save loss to gs
+        self._save_traces(self.config.run_name)
 
     def _save_loss(self):
         fig, ax = plt.subplots()
@@ -153,3 +154,30 @@ class Trainer:
         with self.fs_open(loss_path, "wb") as f:
             fig.savefig(f, format="png", bbox_inches="tight")
         plt.close(fig)
+
+    def _save_traces(self, run_name: str):
+        """
+        Saves the tensoboard profiler traces that we had locally on the fs to gs
+        """
+        local_root = self.trace_log_dir.rstrip("/")  # e.g. "/tmp/layoutdit_profiler"
+        gs_root = f"gs://layoutdit/{run_name}/profiler"
+        gcs = fsspec.filesystem("gcs")
+
+        for dirpath, dirnames, filenames in os.walk(local_root):
+            for fname in filenames:
+                # only copy JSON trace files
+                if not fname.endswith(".json"):
+                    continue
+
+                local_path = os.path.join(dirpath, fname)
+                # compute the path relative to local_root
+                rel_path = os.path.relpath(local_path, local_root)
+                # assemble the destination GCS path
+                # use posix-style separators for GCS URIs
+                gs_path = f"{gs_root}/{rel_path.replace(os.sep, '/')}"
+
+                # stream the file up
+                with open(local_path, "rb") as lf, gcs.open(gs_path, "wb") as gf:
+                    gf.write(lf.read())
+
+                logger.info(f"Uploaded trace {rel_path} → {gs_path}")

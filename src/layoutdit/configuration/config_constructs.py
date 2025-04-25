@@ -28,10 +28,10 @@ class DataLoaderConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    train_input: str = "train"
+    train_input: str = "val"
 
     device: str = Field(default_factory=get_available_device)
-    num_epochs: int = 30
+    num_epochs: int = 25
     learning_rate: float = 1e-4
     weight_decay: float = 0
     step_size: int = 10
@@ -40,7 +40,7 @@ class TrainingConfig(BaseModel):
 
 
 class EvalConfig(BaseModel):
-    eval_input: str = "val"
+    eval_input: str = "samples"
 
     device: str = Field(default_factory=get_available_device)
     score_thresh: float = 0.0
@@ -65,7 +65,7 @@ class LayoutDitConfig(BaseModel):
 
     detection_model_config: ModelConfig = ModelConfig()
 
-    run_name: str = "resnet50_samples_300"
+    run_name: str =  "dit_frozen_val_samples_25"
 
     # optional boolean flag for local mode, if true will load samples instead of train or test split
     local_mode: bool | None = None
