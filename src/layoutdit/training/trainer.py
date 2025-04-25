@@ -1,4 +1,3 @@
-import os
 from typing import Callable
 
 import fsspec
@@ -13,6 +12,8 @@ import torch
 from layoutdit.modeling.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
 from torch.profiler import profile, record_function, ProfilerActivity
+
+from layoutdit.training.prof_trace_handler import trace_handler
 
 logger = get_logger(__name__)
 
@@ -69,23 +70,8 @@ class Trainer:
         self.scaler = GradScaler(enabled=(train_cfg.device == "cuda"))
 
     def train(self):
-
         train_cfg = self.config.train_config
         self.model.train()
-
-        fs = fsspec.filesystem("gcs")
-        local_trace_dir = "/tmp/layoutdit_profiler"
-        os.makedirs(local_trace_dir, exist_ok=True)
-
-        def trace_handler(prof):
-            trace_name = f"trace_{prof.step_num}.json"
-            local_path = os.path.join(local_trace_dir, trace_name)
-            prof.export_chrome_trace(local_path)
-
-            gs_path = f"gs://layoutdit/{self.config.run_name}/profiler/{trace_name}"
-            with fs.open(gs_path, "wb") as f:
-                with open(local_path, "rb") as lf:
-                    f.write(lf.read())
 
         for epoch in range(train_cfg.num_epochs):
             with profile(
@@ -151,7 +137,7 @@ class Trainer:
                     )
                     logger.info(f"Saved checkpoint to {ckpt_path}")
 
-        self._save_loss() # save loss to gs
+        self._save_loss()  # save loss to gs
 
     def _save_loss(self):
         fig, ax = plt.subplots()
