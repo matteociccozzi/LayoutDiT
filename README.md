@@ -40,3 +40,10 @@ It is not feasible to run training on your local machine, this is more of a sani
 from your local machine to make sure the code runs through fine. 
 
 #### GCP VM
+Create a Deep Learning VM, with your desired specifications, then you can connect via ssh as: 
+```
+gcloud compute ssh --project layoutdit --zone us-west2-b deeplearning-1-vm -- -L 8080:localhost:8080
+```
+
+To setup the remote debugger first update your ssh config running `gcloud compute config-ssh --project=layoutdit`
+Then create an SSH Interpreter on port 22, the config should be picked up automatically. 
