@@ -1,3 +1,8 @@
+from typing import Callable
+
+import fsspec
+from matplotlib import pyplot as plt
+
 from layoutdit.configuration.config_constructs import LayoutDitConfig, DataLoaderConfig
 from layoutdit.log import get_logger
 from layoutdit.data.publay_dataset import PubLayNetDataset, collate_fn
@@ -12,6 +17,11 @@ logger = get_logger(__name__)
 
 class Trainer:
     def __init__(self, config: LayoutDitConfig, model: LayoutDetectionModel):
+        self.fs_open: Callable = fsspec.open
+
+        # history of epoch losses
+        self.loss_history: list[float] = []
+
         self.config = config
         self.model = model.to(config.train_config.device)
         self._build_dataloader()
@@ -94,7 +104,9 @@ class Trainer:
 
             # scheduler step
             self.scheduler.step()
-            avg_loss = total_loss / len(self.dataloader)
+            avg_loss = (total_loss / len(self.dataloader)).item()
+            self.loss_history.append(avg_loss)
+
             logger.info(
                 f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
             )
@@ -105,3 +117,18 @@ class Trainer:
                     self.config.run_name, epoch + 1
                 )
                 logger.info(f"Saved checkpoint to {ckpt_path}")
+
+        self._save_loss()
+
+    def _save_loss(self):
+        fig, ax = plt.subplots()
+        ax.plot(range(1, len(self.loss_history) + 1), self.loss_history, marker='o')
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Average Loss")
+        ax.set_title("Training Loss per Epoch")
+
+        loss_path = f"gs://layoutdit/{self.config.run_name}/loss_history/loss_curve.png"
+
+        with self.fs_open(loss_path, "wb") as f:
+            fig.savefig(f, format="png", bbox_inches="tight")
+        plt.close(fig)

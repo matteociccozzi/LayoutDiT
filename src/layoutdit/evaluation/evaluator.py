@@ -28,7 +28,7 @@ class Evaluator:
         self.model = model.to(self.eval_config.device).eval()
         self.dataloader = self._build_eval_dataloader(
             layout_dit_config.data_loader_config,
-            layout_dit_config.eval_config.eval_prefix,
+            layout_dit_config.eval_config.eval_input,
         )
         self.device = self.eval_config.device
 
@@ -41,6 +41,10 @@ class Evaluator:
         }
 
         self.score_thresh = self.eval_config.score_thresh
+
+        self.predictions_path = f"{self.eval_config.eval_base_path}/{layout_dit_config.run_name}/predictions.json"
+        self.visualization_preds_path = f"{self.eval_config.eval_base_path}/{layout_dit_config.run_name}/{self.eval_config.visualize_dirpath_prefix}_preds/"
+        self.visualization_gt_path = f"{self.eval_config.eval_base_path}/{layout_dit_config.run_name}/{self.eval_config.visualize_dirpath_prefix}_gt/"
 
         logger.debug("Successfully initialized evaluator")
 
@@ -63,15 +67,11 @@ class Evaluator:
         draws boxes on up to self.eval_config.num_images source images,
         and writes them into self.eval_config.visualize_dir.
         """
-        preds_path = self.eval_config.predictions_path
         max_per_img = self.eval_config.max_per_image
-        out_dir = self.eval_config.visualize_dirpath_prefix + "_preds"
         num_images = self.eval_config.num_images
         img_root = self.dataloader.dataset.images_root_dir
 
-        os.makedirs(out_dir, exist_ok=True)
-
-        with self.fs_open(preds_path, "r") as f:
+        with self.fs_open(self.predictions_path, "r") as f:
             all_preds = json.load(f)
 
         preds_by_image = {}
@@ -140,8 +140,9 @@ class Evaluator:
                 draw.text((x0, y0 - th), label, fill="white", font=font)
 
             # -- save out the visualization --
-            out_path = os.path.join(out_dir, f"{img_id}.jpg")
-            img.save(out_path)
+            out_path = os.path.join(self.visualization_preds_path, f"{img_id}_gt.jpg")
+            with self.fs_open(out_path, "wb") as f:
+                img.save(f, format="JPEG")
             logger.info(f"Saved visualization for image {img_id} to {out_path}")
 
     def visualize_gt(self):
@@ -149,11 +150,8 @@ class Evaluator:
         Draws ground‑truth boxes on up to self.eval_config.num_images
         source images and writes them into self.eval_config.visualize_dir.
         """
-        out_dir = self.eval_config.visualize_dirpath_prefix + "_gt"
         num_images = self.eval_config.num_images
         img_root = self.dataloader.dataset.images_root_dir
-
-        os.makedirs(out_dir, exist_ok=True)
 
         gt_by_image = {}
         for ann in self.coco_gt.dataset["annotations"]:
@@ -178,8 +176,8 @@ class Evaluator:
             # -- load the raw image --
             file_name = img_rec["file_name"]
             full_path = os.path.join(img_root, file_name)
-            fs = fsspec.open(full_path, mode="rb").fs
-            with fs.open(full_path, "rb") as f:
+
+            with self.fs_open(full_path, "rb") as f:
                 img = Image.open(f).convert("RGB")
 
             draw = ImageDraw.Draw(img)
@@ -212,8 +210,10 @@ class Evaluator:
                 draw.text((x0, y0 - th), label_text, fill="white", font=font)
 
             # -- save visualization --
-            out_path = os.path.join(out_dir, f"{img_id}_gt.jpg")
-            img.save(out_path)
+            out_path = os.path.join(self.visualization_gt_path, f"{img_id}_gt.jpg")
+            with self.fs_open(out_path, "wb") as f:
+                img.save(f, format="JPEG")
+
             logger.info(f"Saved GT visualization for image {img_id} to {out_path}")
 
     def score(self):
@@ -261,7 +261,7 @@ class Evaluator:
             logger.warning("No predictions were generated.")
             return None
 
-        self.save_preds_json(all_predictions)
+        self._save_predictions_json(all_predictions)
 
         coco_dt = self.coco_gt.loadRes(all_predictions)
         coco_eval = COCOeval(self.coco_gt, coco_dt, iouType="bbox")
@@ -285,14 +285,13 @@ class Evaluator:
         ]
         return dict(zip(coco_keys, coco_eval.stats.tolist()))
 
-    def save_preds_json(self, all_predictions):
-        if self.eval_config.predictions_path:
-            with self.fs_open(self.eval_config.predictions_path, "w") as f:
-                json.dump(all_predictions, f)
+    def _save_predictions_json(self, all_predictions):
+        with self.fs_open(self.predictions_path, "w") as f:
+            json.dump(all_predictions, f)
 
-            logger.info(
-                f"Saved {len(all_predictions)} predictions to {self.eval_config.predictions_path}"
-            )
+        logger.info(
+            f"Saved {len(all_predictions)} predictions to {self.predictions_path}"
+        )
 
     @staticmethod
     def _build_eval_dataloader(

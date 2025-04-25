@@ -36,7 +36,7 @@ def main():
     evaluator = Evaluator(model=model, layout_dit_config=layout_dit_config)
     evaluator.score()
     evaluator.visualize_preds()
-    # evaluator.visualize_gt()
+    evaluator.visualize_gt()
 
 
 if __name__ == "__main__":

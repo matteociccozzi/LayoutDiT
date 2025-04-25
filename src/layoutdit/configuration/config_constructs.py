@@ -28,7 +28,7 @@ class DataLoaderConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    train_input: str = "val"
+    train_input: str = "single"
 
     device: str = Field(default_factory=get_available_device)
     num_epochs: int = 30
@@ -36,17 +36,17 @@ class TrainingConfig(BaseModel):
     weight_decay: float = 0
     step_size: int = 10
     gamma: float = 0.1
-    checkpoint_interval: int = 1
+    checkpoint_interval: int = 35
 
 
 class EvalConfig(BaseModel):
-    eval_input: str = "val"
+    eval_input: str = "single"
 
     device: str = Field(default_factory=get_available_device)
     score_thresh: float = 0.0
 
     # if set evaluator will save predictions in a json file in same format as publaynet
-    predictions_path: Optional[str] = "gs://layoutdit/test2/predictions.json"
+    eval_base_path: Optional[str] = "gs://layoutdit"
 
     # visualization settings
     max_per_image: int = 10  # how many boxes to draw per image max
@@ -65,7 +65,7 @@ class LayoutDitConfig(BaseModel):
 
     detection_model_config: ModelConfig = ModelConfig()
 
-    run_name: str = "test2-run"
+    run_name: str = "test4-run"
 
     # optional boolean flag for local mode, if true will load samples instead of train or test split
     local_mode: bool | None = None
