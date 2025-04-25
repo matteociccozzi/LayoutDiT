@@ -28,7 +28,7 @@ class DataLoaderConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    train_input: str = "single"
+    train_input: str = "val"
 
     device: str = Field(default_factory=get_available_device)
     num_epochs: int = 30
@@ -40,7 +40,7 @@ class TrainingConfig(BaseModel):
 
 
 class EvalConfig(BaseModel):
-    eval_input: str = "single"  # "val"
+    eval_input: str = "val"
 
     device: str = Field(default_factory=get_available_device)
     score_thresh: float = 0.0
