@@ -14,6 +14,11 @@ def main():
     parser.add_argument(
         "--local_mode", action="store_true", help="Use local samples for training"
     )
+    parser.add_argument(
+        "--read_config",
+        action="store_true",
+        help="Read config from gs://layoutdit/layout_dit_config.json",
+    )
     args = parser.parse_args()
 
     layout_dit_config = get_layout_dit_config()
@@ -24,7 +29,6 @@ def main():
     model = LayoutDetectionModel(
         model_config=layout_dit_config.detection_model_config,
         device=layout_dit_config.train_config.device,
-        # previous_layout_dit_checkpoint="gs://layoutdit/model_checkpoints/2025-04-19 22:07:12.542712/epoch_1.pth",
     )
 
     model = model.to(device=layout_dit_config.train_config.device)

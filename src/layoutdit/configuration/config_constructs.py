@@ -22,13 +22,13 @@ def get_available_device() -> str:
 
 
 class DataLoaderConfig(BaseModel):
-    batch_size: int = 4
+    batch_size: int = 16
     shuffle: bool = True
-    num_workers: int = 2
+    num_workers: int = 0
 
 
 class TrainingConfig(BaseModel):
-    train_input: str = "single"
+    train_input: str = "train"
 
     device: str = Field(default_factory=get_available_device)
     num_epochs: int = 30
@@ -36,11 +36,11 @@ class TrainingConfig(BaseModel):
     weight_decay: float = 0
     step_size: int = 10
     gamma: float = 0.1
-    checkpoint_interval: int = 35
+    checkpoint_interval: int = 10
 
 
 class EvalConfig(BaseModel):
-    eval_input: str = "single"
+    eval_input: str = "val"
 
     device: str = Field(default_factory=get_available_device)
     score_thresh: float = 0.0
@@ -51,7 +51,7 @@ class EvalConfig(BaseModel):
     # visualization settings
     max_per_image: int = 10  # how many boxes to draw per image max
     visualize_dirpath_prefix: str = "visualizations"
-    num_images: Optional[int] = 1  # how many images to visualize (None = all)
+    num_images: Optional[int] = 20  # how many images to visualize (None = all)
 
 
 class LayoutDitConfig(BaseModel):
@@ -65,7 +65,7 @@ class LayoutDitConfig(BaseModel):
 
     detection_model_config: ModelConfig = ModelConfig()
 
-    run_name: str = "test4-run"
+    run_name: str = "resnet50_samples_300"
 
     # optional boolean flag for local mode, if true will load samples instead of train or test split
     local_mode: bool | None = None

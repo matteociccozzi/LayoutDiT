@@ -3,3 +3,8 @@
 * ADD COCO SUMMARY TO GCS
 * RUN ON SINGLE NODE
 * ADD DISTRIBUTED TRAINING
+
+
+```
+gcloud auth application-default login
+```

@@ -4,7 +4,7 @@ from layoutdit.modeling.backbone_type import BackboneType
 
 
 class ModelConfig(BaseModel):
-    backbone_type: BackboneType = BackboneType.DIT
+    backbone_type: BackboneType = BackboneType.RESNET50
 
     num_classes: int = 5
 

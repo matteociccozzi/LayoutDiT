@@ -1,3 +1,4 @@
+import os
 from typing import Callable
 
 import fsspec
@@ -11,6 +12,7 @@ from torch.amp import autocast, GradScaler
 import torch
 from layoutdit.modeling.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
+from torch.profiler import profile, record_function, ProfilerActivity
 
 logger = get_logger(__name__)
 
@@ -67,58 +69,89 @@ class Trainer:
         self.scaler = GradScaler(enabled=(train_cfg.device == "cuda"))
 
     def train(self):
+
         train_cfg = self.config.train_config
         self.model.train()
+
+        fs = fsspec.filesystem("gcs")
+        local_trace_dir = "/tmp/layoutdit_profiler"
+        os.makedirs(local_trace_dir, exist_ok=True)
+
+        def trace_handler(prof):
+            trace_name = f"trace_{prof.step_num}.json"
+            local_path = os.path.join(local_trace_dir, trace_name)
+            prof.export_chrome_trace(local_path)
+
+            gs_path = f"gs://layoutdit/{self.config.run_name}/profiler/{trace_name}"
+            with fs.open(gs_path, "wb") as f:
+                with open(local_path, "rb") as lf:
+                    f.write(lf.read())
+
         for epoch in range(train_cfg.num_epochs):
-            total_loss = torch.tensor(0.0, device=train_cfg.device)
-            for images, targets in self.dataloader:
-                targets = [
-                    {
-                        k: v.to(train_cfg.device) if torch.is_tensor(v) else v
-                        for k, v in t.items()
-                    }
-                    for t in targets
-                ]
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+                on_trace_ready=trace_handler,
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            ) as prof:
+                total_loss = torch.tensor(0.0, device=train_cfg.device)
+                for images, targets in self.dataloader:
+                    # auto vcast issue in backbone and rcnn
 
-                self.optimizer.zero_grad()
-                # forward + loss
-                if train_cfg.device == "cuda":
-                    with autocast(device_type="cuda", dtype=torch.float16):
-                        loss_dict = self.model(images, targets)
-                else:
-                    loss_dict = self.model(images, targets)
+                    images = [img.to(train_cfg.device).half() for img in images]
+                    targets = [
+                        {
+                            k: v.to(train_cfg.device) if torch.is_tensor(v) else v
+                            for k, v in t.items()
+                        }
+                        for t in targets
+                    ]
 
-                # backward
-                loss = torch.stack(list(loss_dict.values())).sum()
+                    with record_function("model_forward"):
+                        self.optimizer.zero_grad()
+                        # forward + loss
+                        if train_cfg.device == "cuda":
+                            with autocast(device_type="cuda", dtype=torch.float16):
+                                loss_dict = self.model(images, targets)
+                        else:
+                            loss_dict = self.model(images, targets)
 
-                if self.scaler.is_enabled():
-                    self.scaler.scale(loss).backward()
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    loss.backward()
-                    self.optimizer.step()
+                    # backward
+                    with record_function("model_backward"):
+                        loss = torch.stack(list(loss_dict.values())).sum()
 
-                total_loss += loss
-                logger.debug(f"Finished on image batch. batch_size={len(images)}")
+                        if self.scaler.is_enabled():
+                            self.scaler.scale(loss).backward()
+                            self.scaler.step(self.optimizer)
+                            self.scaler.update()
+                        else:
+                            loss.backward()
+                            self.optimizer.step()
 
-            # scheduler step
-            self.scheduler.step()
-            avg_loss = (total_loss / len(self.dataloader)).item()
-            self.loss_history.append(avg_loss)
+                    prof.step()
 
-            logger.info(
-                f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
-            )
+                    total_loss += loss
+                    logger.debug(f"Finished on image batch. batch_size={len(images)}")
 
-            # checkpoint
-            if (epoch + 1) % train_cfg.checkpoint_interval == 0:
-                ckpt_path = self.model.save_checkpoint_to_gcs(
-                    self.config.run_name, epoch + 1
+                # scheduler step
+                self.scheduler.step()
+                avg_loss = (total_loss / len(self.dataloader)).item()
+                self.loss_history.append(avg_loss)
+
+                logger.info(
+                    f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
                 )
-                logger.info(f"Saved checkpoint to {ckpt_path}")
 
-        self._save_loss()
+                # checkpoint
+                if (epoch + 1) % train_cfg.checkpoint_interval == 0:
+                    ckpt_path = self.model.save_checkpoint_to_gcs(
+                        self.config.run_name, epoch + 1
+                    )
+                    logger.info(f"Saved checkpoint to {ckpt_path}")
+
+        self._save_loss() # save loss to gs
 
     def _save_loss(self):
         fig, ax = plt.subplots()
@@ -128,6 +161,8 @@ class Trainer:
         ax.set_title("Training Loss per Epoch")
 
         loss_path = f"gs://layoutdit/{self.config.run_name}/loss_history/loss_curve.png"
+
+        logger.info(f"Saving loss to {loss_path}")
 
         with self.fs_open(loss_path, "wb") as f:
             fig.savefig(f, format="png", bbox_inches="tight")

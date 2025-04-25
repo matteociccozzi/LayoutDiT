@@ -66,6 +66,9 @@ class PubLayNetDataset(Dataset):
 
         boxes = torch.tensor(boxes, dtype=torch.float32)
         labels = torch.tensor(labels, dtype=torch.int64)
+        keep = (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])
+        boxes = boxes[keep]
+        labels = labels[keep]
         target = {"boxes": boxes, "labels": labels, "image_id": torch.tensor([img_id])}
 
         return image, target

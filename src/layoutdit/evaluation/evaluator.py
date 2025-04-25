@@ -140,7 +140,7 @@ class Evaluator:
                 draw.text((x0, y0 - th), label, fill="white", font=font)
 
             # -- save out the visualization --
-            out_path = os.path.join(self.visualization_preds_path, f"{img_id}_gt.jpg")
+            out_path = os.path.join(self.visualization_preds_path, f"{img_id}.jpg")
             with self.fs_open(out_path, "wb") as f:
                 img.save(f, format="JPEG")
             logger.info(f"Saved visualization for image {img_id} to {out_path}")
@@ -210,7 +210,7 @@ class Evaluator:
                 draw.text((x0, y0 - th), label_text, fill="white", font=font)
 
             # -- save visualization --
-            out_path = os.path.join(self.visualization_gt_path, f"{img_id}_gt.jpg")
+            out_path = os.path.join(self.visualization_gt_path, f"{img_id}.jpg")
             with self.fs_open(out_path, "wb") as f:
                 img.save(f, format="JPEG")
 

@@ -71,9 +71,9 @@ class DiTWithFPN(nn.Module):
         super().__init__()
         self.backbone = DiTBackbone(pretrained=pretrained)
 
-        # TODO DELETE ME
-        for _, p in self.backbone.dit.named_parameters():
-            p.requires_grad = False
+        # # TODO DELETE ME
+        # for _, p in self.backbone.dit.named_parameters():
+        #     p.requires_grad = False
 
         # FPN input channels are all equal to DiT hidden_size
         in_channels = [self.backbone.hidden_size] * 4
