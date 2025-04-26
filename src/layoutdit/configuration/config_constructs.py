@@ -28,6 +28,9 @@ class DataLoaderConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
+    # make sure to change this for training at scale to the mounted location, see README
+    train_base_path: str = "gs://layoutdit/data"
+
     train_input: str = "single"
 
     device: str = Field(default_factory=get_available_device)

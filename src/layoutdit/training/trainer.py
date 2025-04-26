@@ -44,11 +44,12 @@ class Trainer:
     def _build_dataloader(self):
         dl_cfg: DataLoaderConfig = self.config.data_loader_config
 
+        base = self.config.train_config.train_base_path
         segment = self.config.train_config.train_input
 
         dataset = PubLayNetDataset(
-            images_root_dir=f"gs://layoutdit/data/{segment}/",
-            annotations_json_path=f"gs://layoutdit/data/{segment}.json",
+            images_root_dir=f"{base}/{segment}/",
+            annotations_json_path=f"{base}/{segment}.json",
         )
         self.dataloader = DataLoader(
             dataset,
