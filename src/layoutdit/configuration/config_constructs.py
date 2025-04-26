@@ -24,11 +24,11 @@ def get_available_device() -> str:
 class DataLoaderConfig(BaseModel):
     batch_size: int = 16
     shuffle: bool = True
-    num_workers: int = 0
+    num_workers: int = 2
 
 
 class TrainingConfig(BaseModel):
-    train_input: str = "val"
+    train_input: str = "single"
 
     device: str = Field(default_factory=get_available_device)
     num_epochs: int = 25
@@ -37,6 +37,8 @@ class TrainingConfig(BaseModel):
     step_size: int = 10
     gamma: float = 0.1
     checkpoint_interval: int = 10
+
+    enable_profile: bool = False
 
 
 class EvalConfig(BaseModel):
@@ -65,7 +67,7 @@ class LayoutDitConfig(BaseModel):
 
     detection_model_config: ModelConfig = ModelConfig()
 
-    run_name: str =  "dit_frozen_val_samples_25"
+    run_name: str = "test"
 
     # optional boolean flag for local mode, if true will load samples instead of train or test split
     local_mode: bool | None = None

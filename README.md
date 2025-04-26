@@ -47,3 +47,14 @@ gcloud compute ssh --project layoutdit --zone us-west2-b deeplearning-1-vm -- -L
 
 To setup the remote debugger first update your ssh config running `gcloud compute config-ssh --project=layoutdit`
 Then create an SSH Interpreter on port 22, the config should be picked up automatically. 
+
+We want to avoid reading data from gs directly during training so we should use 
+`gcsfuse layoutdit /input/data/layoutdit` 
+
+This will give us lower per-worker overhead, built-in caching, and full POSIX compatibility so we avoid the timeouts
+and complexity of per-worker GCS clients.
+
+
+# TODO
+- Add support for distributed training
+- 

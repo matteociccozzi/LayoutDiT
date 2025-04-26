@@ -4,7 +4,11 @@ from typing import Callable
 import fsspec
 from matplotlib import pyplot as plt
 
-from layoutdit.configuration.config_constructs import LayoutDitConfig, DataLoaderConfig
+from layoutdit.configuration.config_constructs import (
+    LayoutDitConfig,
+    DataLoaderConfig,
+    TrainingConfig,
+)
 from layoutdit.log import get_logger
 from layoutdit.data.publay_dataset import PubLayNetDataset, collate_fn
 import torch.optim as optim
@@ -12,7 +16,12 @@ from torch.amp import autocast, GradScaler
 import torch
 from layoutdit.modeling.model import LayoutDetectionModel
 from torch.utils.data import DataLoader
-from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
+from torch.profiler import (
+    profile,
+    record_function,
+    ProfilerActivity,
+    tensorboard_trace_handler,
+)
 
 logger = get_logger(__name__)
 
@@ -23,7 +32,7 @@ class Trainer:
 
         # history of epoch losses
         self.loss_history: list[float] = []
-        self.trace_log_dir = f"./log/traces"
+        self.trace_log_dir = "./log/traces"
 
         self.config = config
         self.model = model.to(config.train_config.device)
@@ -69,73 +78,137 @@ class Trainer:
         train_cfg = self.config.train_config
         self.scaler = GradScaler(enabled=(train_cfg.device == "cuda"))
 
+    def _train_loop_with_profile(self, train_cfg: TrainingConfig, epoch: int):
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+            on_trace_ready=tensorboard_trace_handler(self.trace_log_dir),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        ) as prof:
+            total_loss = torch.tensor(0.0, device=train_cfg.device)
+            for images, targets in self.dataloader:
+                # auto vcast issue in backbone and rcnn
+
+                if train_cfg.device == "cuda":
+                    # autocast issue
+                    images = [img.to(train_cfg.device).half() for img in images]
+                targets = [
+                    {
+                        k: v.to(train_cfg.device) if torch.is_tensor(v) else v
+                        for k, v in t.items()
+                    }
+                    for t in targets
+                ]
+
+                with record_function("model_forward"):
+                    self.optimizer.zero_grad()
+                    # forward + loss
+                    if train_cfg.device == "cuda":
+                        with autocast(device_type="cuda", dtype=torch.float16):
+                            loss_dict = self.model(images, targets)
+                    else:
+                        loss_dict = self.model(images, targets)
+
+                # backward
+                with record_function("model_backward"):
+                    loss = torch.stack(list(loss_dict.values())).sum()
+
+                    if self.scaler.is_enabled():
+                        self.scaler.scale(loss).backward()
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        loss.backward()
+                        self.optimizer.step()
+
+                prof.step()
+
+                total_loss += loss
+                logger.debug(f"Finished on image batch. batch_size={len(images)}")
+
+            # scheduler step
+            self.scheduler.step()
+            avg_loss = (total_loss / len(self.dataloader)).item()
+            self.loss_history.append(avg_loss)
+
+            logger.info(
+                f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
+            )
+
+            # checkpoint
+            if (epoch + 1) % train_cfg.checkpoint_interval == 0:
+                ckpt_path = self.model.save_checkpoint_to_gcs(
+                    self.config.run_name, epoch + 1
+                )
+                logger.info(f"Saved checkpoint to {ckpt_path}")
+
+    def _train_loop(self, train_cfg: TrainingConfig, epoch: int):
+        total_loss = torch.tensor(0.0, device=train_cfg.device)
+        for images, targets in self.dataloader:
+            # auto vcast issue in backbone and rcnn
+
+            if train_cfg.device == "cuda":
+                # autocast issue
+                images = [img.to(train_cfg.device).half() for img in images]
+            targets = [
+                {
+                    k: v.to(train_cfg.device) if torch.is_tensor(v) else v
+                    for k, v in t.items()
+                }
+                for t in targets
+            ]
+
+            with record_function("model_forward"):
+                self.optimizer.zero_grad()
+                # forward + loss
+                if train_cfg.device == "cuda":
+                    with autocast(device_type="cuda", dtype=torch.float16):
+                        loss_dict = self.model(images, targets)
+                else:
+                    loss_dict = self.model(images, targets)
+
+            # backward
+            with record_function("model_backward"):
+                loss = torch.stack(list(loss_dict.values())).sum()
+
+                if self.scaler.is_enabled():
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    self.optimizer.step()
+
+                total_loss += loss
+                logger.debug(f"Finished on image batch. batch_size={len(images)}")
+
+            # scheduler step
+            self.scheduler.step()
+            avg_loss = (total_loss / len(self.dataloader)).item()
+            self.loss_history.append(avg_loss)
+
+            logger.info(
+                f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
+            )
+
+            # checkpoint
+            if (epoch + 1) % train_cfg.checkpoint_interval == 0:
+                ckpt_path = self.model.save_checkpoint_to_gcs(
+                    self.config.run_name, epoch + 1
+                )
+                logger.info(f"Saved checkpoint to {ckpt_path}")
+
     def train(self):
         train_cfg = self.config.train_config
         self.model.train()
 
         for epoch in range(train_cfg.num_epochs):
-            with profile(
-                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
-                on_trace_ready=tensorboard_trace_handler(self.trace_log_dir),
-                record_shapes=True,
-                profile_memory=True,
-                with_stack=True,
-            ) as prof:
-                total_loss = torch.tensor(0.0, device=train_cfg.device)
-                for images, targets in self.dataloader:
-                    # auto vcast issue in backbone and rcnn
-
-                    images = [img.to(train_cfg.device).half() for img in images]
-                    targets = [
-                        {
-                            k: v.to(train_cfg.device) if torch.is_tensor(v) else v
-                            for k, v in t.items()
-                        }
-                        for t in targets
-                    ]
-
-                    with record_function("model_forward"):
-                        self.optimizer.zero_grad()
-                        # forward + loss
-                        if train_cfg.device == "cuda":
-                            with autocast(device_type="cuda", dtype=torch.float16):
-                                loss_dict = self.model(images, targets)
-                        else:
-                            loss_dict = self.model(images, targets)
-
-                    # backward
-                    with record_function("model_backward"):
-                        loss = torch.stack(list(loss_dict.values())).sum()
-
-                        if self.scaler.is_enabled():
-                            self.scaler.scale(loss).backward()
-                            self.scaler.step(self.optimizer)
-                            self.scaler.update()
-                        else:
-                            loss.backward()
-                            self.optimizer.step()
-
-                    prof.step()
-
-                    total_loss += loss
-                    logger.debug(f"Finished on image batch. batch_size={len(images)}")
-
-                # scheduler step
-                self.scheduler.step()
-                avg_loss = (total_loss / len(self.dataloader)).item()
-                self.loss_history.append(avg_loss)
-
-                logger.info(
-                    f"Epoch {epoch + 1}/{train_cfg.num_epochs}, Loss: {avg_loss:.4f}"
-                )
-
-                # checkpoint
-                if (epoch + 1) % train_cfg.checkpoint_interval == 0:
-                    ckpt_path = self.model.save_checkpoint_to_gcs(
-                        self.config.run_name, epoch + 1
-                    )
-                    logger.info(f"Saved checkpoint to {ckpt_path}")
+            if train_cfg.enable_profile:
+                self._train_loop_with_profile(train_cfg, epoch)
+            else:
+                self._train_loop(train_cfg, epoch)
 
         self._save_loss()  # save loss to gs
         self._save_traces(self.config.run_name)
