@@ -57,4 +57,6 @@ and complexity of per-worker GCS clients.
 
 # TODO
 - Add support for distributed training
-- 
+- Refactor trainer to put a custom contex manager for profiler
+- tests
+- yaml config for improved human readabilty? 
